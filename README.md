@@ -43,18 +43,31 @@ brew install arm-none-eabi-gcc
 **Windows:**
 Download and install from [ARM Developer](https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm/downloads)
 
-### 2. Install CMSIS Headers (Optional but Recommended)
+### 2. CMSIS Headers (Bundled)
 
-Download CMSIS from ARM and place in `CMSIS/` directory:
-```bash
-mkdir -p CMSIS/Include
-# Download core_cm4.h and other CMSIS headers to CMSIS/Include/
+CMSIS headers for Cortex-M4 are already included in this repository at `CMSIS/Include/`. No additional installation is required.
+
+If you need to update or reinstall them manually, download from ARM's GitHub and place them **relative to the project root**:
+
+```
+Tk499-Clock-/
+└── CMSIS/
+    └── Include/
+        ├── core_cm4.h
+        ├── cmsis_compiler.h
+        ├── cmsis_gcc.h
+        └── cmsis_version.h
 ```
 
-Or install via package manager:
+To download fresh copies:
 ```bash
-# Ubuntu/Debian
-sudo apt install libcmsis-dev
+cd Tk499-Clock-
+mkdir -p CMSIS/Include
+cd CMSIS/Include
+wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/core_cm4.h
+wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/cmsis_compiler.h
+wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/cmsis_gcc.h
+wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/cmsis_version.h
 ```
 
 ### 3. Install Flashing Tools
@@ -169,7 +182,8 @@ make clean
 - Try running with sudo
 
 **Build errors about missing CMSIS headers**
-- Download CMSIS headers or comment out FPU-related code in system files
+- Verify that `CMSIS/Include/` exists in the project root with `core_cm4.h` and related files
+- If missing, re-download from ARM's GitHub (see Prerequisites section above)
 
 ## License
 
