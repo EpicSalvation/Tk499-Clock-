@@ -56,7 +56,8 @@ Tk499-Clock-/
         ├── core_cm4.h
         ├── cmsis_compiler.h
         ├── cmsis_gcc.h
-        └── cmsis_version.h
+        ├── cmsis_version.h
+        └── mpu_armv7.h
 ```
 
 To download fresh copies:
@@ -68,6 +69,7 @@ wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/I
 wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/cmsis_compiler.h
 wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/cmsis_gcc.h
 wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/cmsis_version.h
+wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/mpu_armv7.h
 ```
 
 ### 3. Install Flashing Tools
