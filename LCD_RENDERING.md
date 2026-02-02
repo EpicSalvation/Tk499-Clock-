@@ -13,6 +13,8 @@ This document explains how the TKM32F499 clock application renders graphics and 
 7. [Drawing Lines and Rectangles](#drawing-lines-and-rectangles)
 8. [Positioning and Layout](#positioning-and-layout)
 9. [Complete Example](#complete-example)
+10. [Color Reference](#color-reference)
+11. [Backlight Control](#backlight-control)
 
 ---
 
@@ -515,3 +517,135 @@ Colors use **RGB565** format (16 bits: 5 red, 6 green, 5 blue):
 // Example: Create a purple color (red + blue)
 #define COLOR_PURPLE RGB565(20, 0, 20)  // 0xA014
 ```
+
+---
+
+## Backlight Control
+
+The LCD backlight is separate from the display controller. It's powered by an **MP3302** boost converter and controlled via **PD8**.
+
+### Hardware Setup
+
+```
+PD8 (GPIO) ───► MP3302 (EN pin) ───► Backlight LEDs (LEDA/LEDK)
+                  │
+              Boost converter
+              3.3V → ~20V
+```
+
+### Simple On/Off Control
+
+For basic control, toggle PD8 directly:
+
+```c
+// Initialize (called automatically by LCD_Init)
+void LCD_BacklightInit(void)
+{
+    // Enable GPIOD clock
+    RCC->AHB1ENR |= (1 << 3);
+
+    // Configure PD8 as push-pull output
+    GPIOD->CRH &= ~(0x0F << 0);  // Clear bits [3:0]
+    GPIOD->CRH |= (0x03 << 0);   // 50MHz push-pull
+
+    LCD_BacklightOn();
+}
+
+void LCD_BacklightOn(void)
+{
+    GPIOD->BSRR = (1 << 8);      // Set PD8 high
+}
+
+void LCD_BacklightOff(void)
+{
+    GPIOD->BSRR = (1 << 24);     // Set PD8 low (reset)
+}
+```
+
+### PWM Brightness Control
+
+For variable brightness (0-100%), use software PWM via TIM3:
+
+```c
+// Initialize PWM brightness control
+LCD_BrightnessInit();
+
+// Set brightness level (0 = off, 100 = full)
+LCD_SetBrightness(75);  // 75% brightness
+
+// Get current level
+uint8_t level = LCD_GetBrightness();
+```
+
+### How PWM Dimming Works
+
+The backlight LEDs respond to average voltage. PWM rapidly switches the enable signal on and off - the LED integrates this into a perceived brightness:
+
+```
+100% brightness:  ████████████████  (always on)
+ 75% brightness:  ████████████      (on 75% of cycle)
+ 50% brightness:  ████████          (on 50% of cycle)
+ 25% brightness:  ████              (on 25% of cycle)
+  0% brightness:                    (always off)
+```
+
+### PWM Implementation Details
+
+TIM3 generates interrupts at 100kHz (100 ticks per 1kHz PWM cycle):
+
+```c
+/* Timer interrupt handler - called 100,000 times/second */
+void TIM3_IRQHandler(void)
+{
+    TIM3->SR &= ~(1 << 0);  // Clear interrupt flag
+
+    pwm_counter++;
+    if (pwm_counter >= 100) pwm_counter = 0;
+
+    // Compare counter against brightness threshold
+    if (pwm_counter < pwm_brightness) {
+        GPIOD->BSRR = (1 << 8);   // On
+    } else {
+        GPIOD->BSRR = (1 << 24);  // Off
+    }
+}
+```
+
+**PWM Parameters:**
+- **Frequency:** 1kHz (no visible flicker)
+- **Resolution:** 100 levels (0-100%)
+- **Timer clock:** 120MHz (APB1 × 2)
+- **Prescaler:** 12 (10MHz tick)
+- **Period:** 100 ticks (100kHz interrupt rate)
+
+### Usage Examples
+
+```c
+// Fade in effect
+for (int i = 0; i <= 100; i++) {
+    LCD_SetBrightness(i);
+    delay(20000);  // ~20ms per step = 2 second fade
+}
+
+// Dim for night mode
+LCD_SetBrightness(20);
+
+// Full brightness for daytime
+LCD_SetBrightness(100);
+
+// Screen off (save power)
+LCD_SetBrightness(0);
+```
+
+### Choosing Control Method
+
+| Method | Pros | Cons |
+|--------|------|------|
+| `LCD_BacklightOn/Off` | Simple, no timer needed | Only on/off, no dimming |
+| `LCD_SetBrightness` | Variable brightness | Uses TIM3, interrupt overhead |
+
+Use simple on/off if you don't need dimming. Use PWM brightness for:
+- Night/day modes
+- Power saving
+- Fade effects
+- User preference settings

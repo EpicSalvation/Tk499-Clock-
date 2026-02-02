@@ -96,4 +96,44 @@ void LCD_WriteData(uint16_t data);
  */
 uint16_t LCD_ReadData(void);
 
+/**
+ * Initialize backlight control (PD8)
+ * Called automatically by LCD_Init()
+ */
+void LCD_BacklightInit(void);
+
+/**
+ * Turn backlight on
+ */
+void LCD_BacklightOn(void);
+
+/**
+ * Turn backlight off
+ */
+void LCD_BacklightOff(void);
+
+/**
+ * Set backlight state (1 = on, 0 = off)
+ */
+void LCD_Backlight(uint8_t on);
+
+/**
+ * Initialize PWM-based brightness control
+ * Uses TIM3 to generate software PWM on PD8
+ * Call this instead of LCD_BacklightInit() for variable brightness
+ */
+void LCD_BrightnessInit(void);
+
+/**
+ * Set backlight brightness level
+ * @param level Brightness from 0 (off) to 100 (full brightness)
+ */
+void LCD_SetBrightness(uint8_t level);
+
+/**
+ * Get current brightness level
+ * @return Current brightness (0-100)
+ */
+uint8_t LCD_GetBrightness(void);
+
 #endif /* __LCD_H */
