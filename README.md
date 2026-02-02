@@ -1,28 +1,33 @@
 # TKM32F499 Clock Project
 
-A clock project based on the TKM32F499 development board (ARM Cortex-M4).
+A clock project based on the TKM32F499 4.3" SmartBoard (ARM Cortex-M4, 240MHz).
 
 ## Project Structure
 
 ```
 Tk499-Clock-/
 ├── src/                    # Source files
-│   ├── main.c              # Main application (Hello World)
-│   └── system_tkm32f499.c  # System initialization and drivers
+│   ├── main.c              # Main application (LED blink)
+│   └── system_tkm32f499.c  # System initialization
 ├── inc/                    # Header files
 │   ├── tkm32f499.h         # MCU peripheral definitions
 │   └── system_tkm32f499.h  # System function prototypes
 ├── startup/                # Startup code
 │   └── startup_tkm32f499.s # Vector table and reset handler
 ├── linker/                 # Linker scripts
-│   └── tkm32f499.ld        # Memory layout definition
+│   └── tkm32f499.ld        # Memory layout (SDRAM at 0x70020000)
+├── CMSIS/Include/          # ARM CMSIS headers (bundled)
+├── vendor/                 # Critical vendor files
+│   ├── Bootloader.bin      # For board recovery
+│   └── *.pdf               # Documentation
+├── LESSONS_LEARNED.md      # Technical notes and gotchas
 ├── Makefile                # Build configuration
 └── README.md               # This file
 ```
 
 ## Prerequisites
 
-### 1. Install ARM GCC Toolchain
+### ARM GCC Toolchain
 
 **Ubuntu/Debian:**
 ```bash
@@ -35,157 +40,99 @@ sudo apt install gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-arm-none-eab
 sudo dnf install arm-none-eabi-gcc arm-none-eabi-newlib
 ```
 
-**macOS (using Homebrew):**
+**macOS (Homebrew):**
 ```bash
 brew install arm-none-eabi-gcc
 ```
 
 **Windows:**
-Download and install from [ARM Developer](https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm/downloads)
+Download from [ARM Developer](https://developer.arm.com/tools-and-software/open-source-software/developer-tools/gnu-toolchain/gnu-rm/downloads)
 
-### 2. CMSIS Headers (Bundled)
+### CMSIS Headers
 
-CMSIS headers for Cortex-M4 are already included in this repository at `CMSIS/Include/`. No additional installation is required.
-
-If you need to update or reinstall them manually, download from ARM's GitHub and place them **relative to the project root**:
-
-```
-Tk499-Clock-/
-└── CMSIS/
-    └── Include/
-        ├── core_cm4.h
-        ├── cmsis_compiler.h
-        ├── cmsis_gcc.h
-        ├── cmsis_version.h
-        └── mpu_armv7.h
-```
-
-To download fresh copies:
-```bash
-cd Tk499-Clock-
-mkdir -p CMSIS/Include
-cd CMSIS/Include
-wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/core_cm4.h
-wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/cmsis_compiler.h
-wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/cmsis_gcc.h
-wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/cmsis_version.h
-wget https://raw.githubusercontent.com/ARM-software/CMSIS_5/develop/CMSIS/Core/Include/mpu_armv7.h
-```
-
-### 3. Install Flashing Tools
-
-**OpenOCD:**
-```bash
-# Ubuntu/Debian
-sudo apt install openocd
-
-# macOS
-brew install openocd
-
-# Fedora
-sudo dnf install openocd
-```
-
-**ST-Link Tools (alternative):**
-```bash
-# Ubuntu/Debian
-sudo apt install stlink-tools
-
-# macOS
-brew install stlink
-```
+Already bundled in `CMSIS/Include/`. No additional installation needed.
 
 ## Building
 
-1. Clone the repository:
 ```bash
 git clone https://github.com/EpicSalvation/Tk499-Clock-.git
 cd Tk499-Clock-
-```
-
-2. Build the project:
-```bash
 make
 ```
 
-3. The build outputs will be in the `build/` directory:
-   - `tkm32f499_clock.elf` - ELF executable (for debugging)
-   - `tkm32f499_clock.hex` - Intel HEX format
-   - `tkm32f499_clock.bin` - Raw binary (for flashing)
+Build outputs in `build/`:
+- `tkm32f499_clock.bin` - Binary for flashing
+- `tkm32f499_clock.elf` - ELF for debugging
+- `tkm32f499_clock.hex` - Intel HEX format
 
 ## Flashing
 
-### Using OpenOCD
-```bash
-make flash
-```
+The TKM32F499 uses **USB drag-and-drop** flashing. No external programmer needed.
 
-### Using ST-Link
-```bash
-make flash-stlink
-```
+### Flash Application
 
-### Manual Flashing
-```bash
-st-flash write build/tkm32f499_clock.bin 0x08000000
-```
+1. Hold **APP button** (PA1/SW2)
+2. While holding APP, press **RESET**
+3. Release RESET, then release APP
+4. A USB drive named **"TK499_V2"** appears
+5. Copy the binary:
+   ```bash
+   cp build/tkm32f499_clock.bin /media/$USER/TK499_V2/
+   ```
+6. Wait for the drive to auto-unmount
+7. Press **RESET** to run
 
-## Hello World Behavior
+### Bootloader Recovery
 
-The Hello World example blinks an LED connected to GPIO PA0:
-- LED toggles every 500ms (1Hz blink rate)
-- Indicates the board is running correctly
+If the board stops working (no "TK499_V2" drive appears):
 
-To modify the LED pin, edit `src/main.c`:
-```c
-#define LED_PORT    GPIOA
-#define LED_PIN     GPIO_Pin_0
-```
+1. Hold **BOOT button** (PA13/SW3)
+2. While holding BOOT, press **RESET**
+3. Release RESET, then release BOOT
+4. A USB drive named **"TK499"** appears (ROM mode)
+5. Copy the bootloader:
+   ```bash
+   cp vendor/Bootloader.bin /media/$USER/TK499/
+   ```
+6. Wait for auto-unmount, press RESET
+7. Now APP+RESET should show "TK499_V2"
 
-## Debugging
+## Current Behavior
 
-### Using GDB with OpenOCD
-1. Start OpenOCD in one terminal:
-```bash
-openocd -f interface/stlink.cfg -f target/stm32f4x.cfg
-```
+The example blinks the LED on **PA8** (D3 on the SmartBoard):
+- ~1 second on, ~1 second off
+- Confirms the board is running correctly
 
-2. Connect with GDB in another terminal:
-```bash
-arm-none-eabi-gdb build/tkm32f499_clock.elf
-(gdb) target remote :3333
-(gdb) monitor reset halt
-(gdb) load
-(gdb) continue
-```
+## Hardware
 
-## Cleaning
+- **Board:** TKM32F499 4.3" SmartBoard
+- **MCU:** TKM32F499 (ARM Cortex-M4, 240MHz)
+- **Memory:** Code runs from external SDRAM at 0x70020000
+- **LED:** PA8 (accent LED, active high)
+- **Buttons:** APP (PA1), BOOT (PA13), RESET
 
-Remove all build artifacts:
-```bash
-make clean
-```
+## Key Technical Notes
 
-## Hardware Requirements
+This chip is unusual - see `LESSONS_LEARNED.md` for details:
 
-- TKM32F499 development board
-- ST-Link V2 programmer (or compatible)
-- USB cable
-- LED (if not built-in)
+- Code executes from **SDRAM** (0x70020000), not internal flash
+- Vector table must be **remapped** to internal SRAM at startup
+- GPIO uses **STM32F1-style** registers (CRL/CRH), not STM32F4-style
+- Two-stage bootloader: ROM bootloader + secondary bootloader in SPI flash
 
 ## Troubleshooting
 
-**"arm-none-eabi-gcc: command not found"**
-- Ensure the ARM toolchain is installed and in your PATH
+**"TK499_V2" drive doesn't appear:**
+- Try APP+RESET again (timing matters)
+- If "TK499" appears instead, your bootloader needs recovery (see above)
 
-**"No ST-LINK detected"**
-- Check USB connection
-- Install udev rules for ST-Link (Linux)
-- Try running with sudo
+**LED doesn't blink after flashing:**
+- Make sure you copied the `.bin` file, not `.elf`
+- Wait for drive to auto-unmount before pressing RESET
+- Check `LESSONS_LEARNED.md` for vector table remapping requirements
 
-**Build errors about missing CMSIS headers**
-- Verify that `CMSIS/Include/` exists in the project root with `core_cm4.h` and related files
-- If missing, re-download from ARM's GitHub (see Prerequisites section above)
+**Build errors about missing headers:**
+- Verify `CMSIS/Include/` exists with `core_cm4.h` and related files
 
 ## License
 
