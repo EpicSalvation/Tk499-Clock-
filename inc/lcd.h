@@ -117,4 +117,23 @@ void LCD_BacklightOff(void);
  */
 void LCD_Backlight(uint8_t on);
 
+/**
+ * Initialize PWM-based brightness control
+ * Uses TIM3 to generate software PWM on PD8
+ * Call this instead of LCD_BacklightInit() for variable brightness
+ */
+void LCD_BrightnessInit(void);
+
+/**
+ * Set backlight brightness level
+ * @param level Brightness from 0 (off) to 100 (full brightness)
+ */
+void LCD_SetBrightness(uint8_t level);
+
+/**
+ * Get current brightness level
+ * @return Current brightness (0-100)
+ */
+uint8_t LCD_GetBrightness(void);
+
 #endif /* __LCD_H */

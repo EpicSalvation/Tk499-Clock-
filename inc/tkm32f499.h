@@ -108,6 +108,11 @@ typedef enum IRQn {
 /* RCC Base Address */
 #define RCC_BASE            (AHB1PERIPH_BASE + 0x3800)
 
+/* Timer Base Addresses (APB1 timers) */
+#define TIM2_BASE           (APB1PERIPH_BASE + 0x0000)
+#define TIM3_BASE           (APB1PERIPH_BASE + 0x0400)
+#define TIM4_BASE           (APB1PERIPH_BASE + 0x0800)
+
 /* ============================================================ */
 /* GPIO Registers (STM32F1-style CRL/CRH)                        */
 /* ============================================================ */
@@ -145,6 +150,32 @@ typedef struct {
 } RCC_TypeDef;
 
 /* ============================================================ */
+/* Timer Registers (General Purpose Timers TIM2-TIM4)            */
+/* ============================================================ */
+typedef struct {
+    volatile uint32_t CR1;      /* Control register 1 */
+    volatile uint32_t CR2;      /* Control register 2 */
+    volatile uint32_t SMCR;     /* Slave mode control register */
+    volatile uint32_t DIER;     /* DMA/Interrupt enable register */
+    volatile uint32_t SR;       /* Status register */
+    volatile uint32_t EGR;      /* Event generation register */
+    volatile uint32_t CCMR1;    /* Capture/compare mode register 1 */
+    volatile uint32_t CCMR2;    /* Capture/compare mode register 2 */
+    volatile uint32_t CCER;     /* Capture/compare enable register */
+    volatile uint32_t CNT;      /* Counter */
+    volatile uint32_t PSC;      /* Prescaler */
+    volatile uint32_t ARR;      /* Auto-reload register */
+    uint32_t RESERVED0;
+    volatile uint32_t CCR1;     /* Capture/compare register 1 */
+    volatile uint32_t CCR2;     /* Capture/compare register 2 */
+    volatile uint32_t CCR3;     /* Capture/compare register 3 */
+    volatile uint32_t CCR4;     /* Capture/compare register 4 */
+    uint32_t RESERVED1;
+    volatile uint32_t DCR;      /* DMA control register */
+    volatile uint32_t DMAR;     /* DMA address for full transfer */
+} TIM_TypeDef;
+
+/* ============================================================ */
 /* Peripheral Declarations                                       */
 /* ============================================================ */
 #define GPIOA   ((GPIO_TypeDef *)GPIOA_BASE)
@@ -154,6 +185,9 @@ typedef struct {
 #define GPIOE   ((GPIO_TypeDef *)GPIOE_BASE)
 #define GPIOF   ((GPIO_TypeDef *)GPIOF_BASE)
 #define RCC     ((RCC_TypeDef *)RCC_BASE)
+#define TIM2    ((TIM_TypeDef *)TIM2_BASE)
+#define TIM3    ((TIM_TypeDef *)TIM3_BASE)
+#define TIM4    ((TIM_TypeDef *)TIM4_BASE)
 
 /* ============================================================ */
 /* GPIO Configuration Types (STM32F1-style)                      */

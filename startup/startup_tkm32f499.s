@@ -100,9 +100,9 @@ g_pfnVectors:
     .word Default_Handler  /* 25 */
     .word Default_Handler  /* 26 */
     .word Default_Handler  /* 27 */
-    .word Default_Handler  /* 28 */
-    .word Default_Handler  /* 29 */
-    .word Default_Handler  /* 30 */
+    .word Default_Handler  /* 28: TIM2 */
+    .word TIM3_IRQHandler  /* 29: TIM3 */
+    .word Default_Handler  /* 30: TIM4 */
     .word Default_Handler  /* 31 */
 
 .size g_pfnVectors, .-g_pfnVectors
@@ -136,5 +136,8 @@ g_pfnVectors:
 
     .weak SysTick_Handler
     .thumb_set SysTick_Handler, Default_Handler
+
+    .weak TIM3_IRQHandler
+    .thumb_set TIM3_IRQHandler, Default_Handler
 
     .end

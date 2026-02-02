@@ -513,3 +513,90 @@ void LCD_Backlight(uint8_t on)
         LCD_BacklightOff();
     }
 }
+
+/*
+ * PWM Brightness Control
+ *
+ * Uses TIM3 to generate a software PWM signal on PD8.
+ * The timer interrupts at 100kHz (100 ticks per 1kHz PWM cycle).
+ * Each interrupt, we compare a counter against the brightness level
+ * and set/clear PD8 accordingly.
+ *
+ * PWM frequency: 1kHz (no visible flicker)
+ * Resolution: 100 levels (0-100%)
+ */
+
+/* PWM state variables */
+static volatile uint8_t pwm_brightness = 100;  /* 0-100 */
+static volatile uint8_t pwm_counter = 0;
+
+/* TIM3 Interrupt Handler - called at 100kHz */
+void TIM3_IRQHandler(void)
+{
+    /* Clear update interrupt flag */
+    TIM3->SR &= ~(1 << 0);
+
+    /* Increment PWM counter (0-99) */
+    pwm_counter++;
+    if (pwm_counter >= 100) {
+        pwm_counter = 0;
+    }
+
+    /* Set PD8 based on brightness threshold */
+    if (pwm_counter < pwm_brightness) {
+        GPIOD->BSRR = (1 << 8);      /* PD8 high (on) */
+    } else {
+        GPIOD->BSRR = (1 << 24);     /* PD8 low (off) */
+    }
+}
+
+/* Initialize PWM brightness control */
+void LCD_BrightnessInit(void)
+{
+    /* Enable GPIOD clock */
+    RCC->AHB1ENR |= (1 << 3);
+
+    /* Configure PD8 as push-pull output */
+    GPIOD->CRH &= ~(0x0F << 0);
+    GPIOD->CRH |= (0x03 << 0);
+
+    /* Enable TIM3 clock (bit 1 of APB1ENR) */
+    RCC->APB1ENR |= (1 << 1);
+
+    /* Configure TIM3 for 100kHz interrupt rate */
+    /* Assuming 240MHz system clock, APB1 typically runs at clock/4 = 60MHz */
+    /* But timer clock is 2x APB1 when prescaler != 1, so 120MHz */
+    /* For 100kHz: 120MHz / 100kHz = 1200 */
+    /* Use prescaler=12-1=11, ARR=100-1=99 -> 120MHz/12/100 = 100kHz */
+    TIM3->PSC = 11;         /* Prescaler: divide by 12 */
+    TIM3->ARR = 99;         /* Auto-reload: count to 99 (100 ticks) */
+    TIM3->CNT = 0;          /* Clear counter */
+
+    /* Enable update interrupt */
+    TIM3->DIER |= (1 << 0); /* UIE: Update interrupt enable */
+
+    /* Enable TIM3 interrupt in NVIC (IRQ 29) */
+    NVIC_EnableIRQ(TIM3_IRQn);
+    NVIC_SetPriority(TIM3_IRQn, 2);  /* Medium priority */
+
+    /* Start timer */
+    TIM3->CR1 |= (1 << 0);  /* CEN: Counter enable */
+
+    /* Set initial brightness to full */
+    pwm_brightness = 100;
+}
+
+/* Set backlight brightness (0-100) */
+void LCD_SetBrightness(uint8_t level)
+{
+    if (level > 100) {
+        level = 100;
+    }
+    pwm_brightness = level;
+}
+
+/* Get current brightness level */
+uint8_t LCD_GetBrightness(void)
+{
+    return pwm_brightness;
+}
