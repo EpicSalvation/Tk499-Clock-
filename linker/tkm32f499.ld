@@ -2,21 +2,25 @@
  * TKM32F499 Linker Script
  *
  * Memory layout for TKM32F499 microcontroller
- * - Flash: 512KB
- * - SRAM: 256KB
+ * - SDRAM: 8MB (internal stacked die)
+ * - QSPI Flash: 16MB (external, memory-mapped)
+ *
+ * Code executes from memory-mapped QSPI flash region.
  */
 
 /* Entry Point */
 ENTRY(Reset_Handler)
 
 /* Highest address of the user mode stack */
-_estack = 0x20040000;    /* End of 256KB RAM */
+_estack = 0x70220000;    /* End of 2MB SDRAM region */
 
 /* Memory Definitions */
+/* Bootloader loads code to SDRAM at 0x70020000 */
+/* Internal SRAM at 0x20000000 is used for vector table (copied at runtime) */
 MEMORY
 {
-    FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 512K
-    RAM (xrw)   : ORIGIN = 0x20000000, LENGTH = 256K
+    FLASH (rx)  : ORIGIN = 0x70020000, LENGTH = 0x200000   /* 2MB SDRAM - code runs here */
+    RAM (xrw)   : ORIGIN = 0x70220000, LENGTH = 0x5E0000   /* Remaining SDRAM for data */
 }
 
 /* Sections */

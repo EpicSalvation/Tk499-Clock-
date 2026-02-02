@@ -89,8 +89,8 @@ typedef enum IRQn {
 /* ============================================================ */
 /* Peripheral Base Addresses                                     */
 /* ============================================================ */
-#define FLASH_BASE          ((uint32_t)0x08000000)
-#define SRAM_BASE           ((uint32_t)0x20000000)
+#define FLASH_BASE          ((uint32_t)0x70220000)  /* QSPI Flash (memory-mapped) */
+#define SRAM_BASE           ((uint32_t)0x70020000)  /* Internal SDRAM */
 #define PERIPH_BASE         ((uint32_t)0x40000000)
 
 #define APB1PERIPH_BASE     (PERIPH_BASE)
@@ -109,18 +109,16 @@ typedef enum IRQn {
 #define RCC_BASE            (AHB1PERIPH_BASE + 0x3800)
 
 /* ============================================================ */
-/* GPIO Registers                                                */
+/* GPIO Registers (STM32F1-style CRL/CRH)                        */
 /* ============================================================ */
 typedef struct {
-    volatile uint32_t MODER;
-    volatile uint32_t OTYPER;
-    volatile uint32_t OSPEEDR;
-    volatile uint32_t PUPDR;
-    volatile uint32_t IDR;
-    volatile uint32_t ODR;
-    volatile uint32_t BSRR;
-    volatile uint32_t LCKR;
-    volatile uint32_t AFR[2];
+    volatile uint32_t CRL;      /* Control Register Low (pins 0-7) */
+    volatile uint32_t CRH;      /* Control Register High (pins 8-15) */
+    volatile uint32_t IDR;      /* Input Data Register */
+    volatile uint32_t ODR;      /* Output Data Register */
+    volatile uint32_t BSRR;     /* Bit Set/Reset Register */
+    volatile uint32_t BRR;      /* Bit Reset Register */
+    volatile uint32_t LCKR;     /* Lock Register */
 } GPIO_TypeDef;
 
 /* ============================================================ */
@@ -158,39 +156,31 @@ typedef struct {
 #define RCC     ((RCC_TypeDef *)RCC_BASE)
 
 /* ============================================================ */
-/* GPIO Configuration Types                                      */
+/* GPIO Configuration Types (STM32F1-style)                      */
 /* ============================================================ */
+/* GPIO Mode: combines CNF[1:0] and MODE[1:0] into 4-bit value   */
+/* Bits [1:0] = MODE, Bits [3:2] = CNF                           */
 typedef enum {
-    GPIO_Mode_IN   = 0x00,
-    GPIO_Mode_OUT  = 0x01,
-    GPIO_Mode_AF   = 0x02,
-    GPIO_Mode_AN   = 0x03
+    GPIO_Mode_AIN         = 0x00,  /* Analog input */
+    GPIO_Mode_IN_FLOATING = 0x04,  /* Floating input */
+    GPIO_Mode_IPD         = 0x28,  /* Input pull-down (special) */
+    GPIO_Mode_IPU         = 0x48,  /* Input pull-up (special) */
+    GPIO_Mode_Out_OD      = 0x14,  /* Output open-drain */
+    GPIO_Mode_Out_PP      = 0x10,  /* Output push-pull */
+    GPIO_Mode_AF_OD       = 0x1C,  /* Alternate function open-drain */
+    GPIO_Mode_AF_PP       = 0x18   /* Alternate function push-pull */
 } GPIOMode_TypeDef;
 
 typedef enum {
-    GPIO_OType_PP = 0x00,
-    GPIO_OType_OD = 0x01
-} GPIOOType_TypeDef;
-
-typedef enum {
-    GPIO_Speed_2MHz   = 0x00,
-    GPIO_Speed_25MHz  = 0x01,
-    GPIO_Speed_50MHz  = 0x02,
-    GPIO_Speed_100MHz = 0x03
+    GPIO_Speed_10MHz = 0x01,
+    GPIO_Speed_2MHz  = 0x02,
+    GPIO_Speed_50MHz = 0x03
 } GPIOSpeed_TypeDef;
-
-typedef enum {
-    GPIO_PuPd_NOPULL = 0x00,
-    GPIO_PuPd_UP     = 0x01,
-    GPIO_PuPd_DOWN   = 0x02
-} GPIOPuPd_TypeDef;
 
 typedef struct {
     uint32_t GPIO_Pin;
-    GPIOMode_TypeDef GPIO_Mode;
     GPIOSpeed_TypeDef GPIO_Speed;
-    GPIOOType_TypeDef GPIO_OType;
-    GPIOPuPd_TypeDef GPIO_PuPd;
+    GPIOMode_TypeDef GPIO_Mode;
 } GPIO_InitTypeDef;
 
 /* GPIO Pin Definitions */

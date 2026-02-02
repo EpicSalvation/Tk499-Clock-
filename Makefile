@@ -23,8 +23,7 @@ LINKER_DIR = linker
 
 # Source files
 C_SOURCES = \
-	$(SRC_DIR)/main.c \
-	$(SRC_DIR)/system_tkm32f499.c
+	$(SRC_DIR)/main.c
 
 # Assembly sources
 ASM_SOURCES = \

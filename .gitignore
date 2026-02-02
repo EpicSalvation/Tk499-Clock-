@@ -22,3 +22,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Reference materials (large vendor files)
+reference/

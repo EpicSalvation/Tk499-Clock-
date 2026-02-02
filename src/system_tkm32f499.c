@@ -42,40 +42,61 @@ void SystemCoreClockUpdate(void)
 /* ============================================================ */
 
 /**
- * @brief  Initialize GPIO pin(s)
+ * @brief  Initialize GPIO pin(s) using STM32F1-style CRL/CRH registers
  * @param  GPIOx: GPIO peripheral (GPIOA, GPIOB, etc.)
  * @param  GPIO_InitStruct: Pointer to init structure
  */
 void GPIO_Init(GPIO_TypeDef* GPIOx, GPIO_InitTypeDef* GPIO_InitStruct)
 {
-    uint32_t pinpos;
-    uint32_t pos;
-    uint32_t currentpin;
+    uint32_t currentmode = GPIO_InitStruct->GPIO_Mode & 0x0F;
+    uint32_t pinpos, pos, currentpin, pinmask;
+    uint32_t tmpreg;
 
-    for (pinpos = 0; pinpos < 16; pinpos++) {
-        pos = ((uint32_t)1) << pinpos;
-        currentpin = GPIO_InitStruct->GPIO_Pin & pos;
+    /* For output modes, add speed to the mode value */
+    if ((GPIO_InitStruct->GPIO_Mode & 0x10) != 0) {
+        currentmode |= (uint32_t)GPIO_InitStruct->GPIO_Speed;
+    }
 
-        if (currentpin == pos) {
-            /* Configure Mode */
-            GPIOx->MODER &= ~(0x03 << (pinpos * 2));
-            GPIOx->MODER |= (((uint32_t)GPIO_InitStruct->GPIO_Mode) << (pinpos * 2));
-
-            if ((GPIO_InitStruct->GPIO_Mode == GPIO_Mode_OUT) ||
-                (GPIO_InitStruct->GPIO_Mode == GPIO_Mode_AF)) {
-                /* Configure Speed */
-                GPIOx->OSPEEDR &= ~(0x03 << (pinpos * 2));
-                GPIOx->OSPEEDR |= ((uint32_t)(GPIO_InitStruct->GPIO_Speed) << (pinpos * 2));
-
-                /* Configure Output Type */
-                GPIOx->OTYPER &= ~(0x01 << pinpos);
-                GPIOx->OTYPER |= (((uint16_t)GPIO_InitStruct->GPIO_OType) << pinpos);
+    /* Configure pins 0-7 (CRL register) */
+    if ((GPIO_InitStruct->GPIO_Pin & 0x00FF) != 0) {
+        tmpreg = GPIOx->CRL;
+        for (pinpos = 0; pinpos < 8; pinpos++) {
+            pos = ((uint32_t)1) << pinpos;
+            currentpin = GPIO_InitStruct->GPIO_Pin & pos;
+            if (currentpin == pos) {
+                pinmask = ((uint32_t)0x0F) << (pinpos * 4);
+                tmpreg &= ~pinmask;
+                tmpreg |= (currentmode << (pinpos * 4));
+                /* Handle pull-up/pull-down for input modes */
+                if (GPIO_InitStruct->GPIO_Mode == GPIO_Mode_IPD) {
+                    GPIOx->BRR = pos;  /* Pull-down: reset bit */
+                } else if (GPIO_InitStruct->GPIO_Mode == GPIO_Mode_IPU) {
+                    GPIOx->BSRR = pos; /* Pull-up: set bit */
+                }
             }
-
-            /* Configure Pull-up/Pull-down */
-            GPIOx->PUPDR &= ~(0x03 << (pinpos * 2));
-            GPIOx->PUPDR |= (((uint32_t)GPIO_InitStruct->GPIO_PuPd) << (pinpos * 2));
         }
+        GPIOx->CRL = tmpreg;
+    }
+
+    /* Configure pins 8-15 (CRH register) */
+    if ((GPIO_InitStruct->GPIO_Pin & 0xFF00) != 0) {
+        tmpreg = GPIOx->CRH;
+        for (pinpos = 0; pinpos < 8; pinpos++) {
+            pos = ((uint32_t)1) << (pinpos + 8);
+            currentpin = GPIO_InitStruct->GPIO_Pin & pos;
+            if (currentpin == pos) {
+                pinmask = ((uint32_t)0x0F) << (pinpos * 4);
+                tmpreg &= ~pinmask;
+                tmpreg |= (currentmode << (pinpos * 4));
+                /* Handle pull-up/pull-down for input modes */
+                if (GPIO_InitStruct->GPIO_Mode == GPIO_Mode_IPD) {
+                    GPIOx->BRR = pos;
+                } else if (GPIO_InitStruct->GPIO_Mode == GPIO_Mode_IPU) {
+                    GPIOx->BSRR = pos;
+                }
+            }
+        }
+        GPIOx->CRH = tmpreg;
     }
 }
 
