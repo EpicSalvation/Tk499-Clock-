@@ -1,6 +1,10 @@
 /**
- * TKM32F499 Clock Project - Minimal LED Blink
+ * TKM32F499 LED Blink Test
  *
+ * A minimal test program that blinks the LED on PA8 (D3 on SmartBoard).
+ * Useful for verifying that the hardware and flashing process work correctly.
+ *
+ * Build with: make blink_test
  * Direct register access - no library code
  */
 

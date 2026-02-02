@@ -1,9 +1,12 @@
 # TKM32F499 Clock Project Makefile
 #
 # Build system for ARM Cortex-M4 based TKM32F499 microcontroller
-
-# Project name
-PROJECT = tkm32f499_clock
+#
+# Targets:
+#   make clock      - Build the clock application (default)
+#   make blink_test - Build the LED blink test
+#   make all        - Build both targets
+#   make clean      - Remove build directory
 
 # Toolchain
 PREFIX = arm-none-eabi-
@@ -21,9 +24,19 @@ INC_DIR = inc
 STARTUP_DIR = startup
 LINKER_DIR = linker
 
-# Source files
-C_SOURCES = \
-	$(SRC_DIR)/main.c
+# Common source files
+COMMON_SOURCES = \
+	$(SRC_DIR)/system_tkm32f499.c
+
+# Clock application sources
+CLOCK_SOURCES = \
+	$(SRC_DIR)/clock_main.c \
+	$(SRC_DIR)/lcd.c \
+	$(COMMON_SOURCES)
+
+# Blink test sources
+BLINK_SOURCES = \
+	$(SRC_DIR)/blink_test.c
 
 # Assembly sources
 ASM_SOURCES = \
@@ -50,67 +63,104 @@ ASFLAGS = $(MCU) -Wall -fdata-sections -ffunction-sections
 # Linker flags
 LDSCRIPT = $(LINKER_DIR)/tkm32f499.ld
 LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) -lc -lm -lnosys
-LDFLAGS += -Wl,-Map=$(BUILD_DIR)/$(PROJECT).map,--cref
 LDFLAGS += -Wl,--gc-sections
-
-# Object files
-OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(C_SOURCES:.c=.o)))
-vpath %.c $(sort $(dir $(C_SOURCES)))
-
-OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
-vpath %.s $(sort $(dir $(ASM_SOURCES)))
-
-# Default target
-all: $(BUILD_DIR)/$(PROJECT).elf $(BUILD_DIR)/$(PROJECT).hex $(BUILD_DIR)/$(PROJECT).bin
 
 # Build directory
 $(BUILD_DIR):
 	mkdir -p $@
 
-# Compile C sources
-$(BUILD_DIR)/%.o: %.c Makefile | $(BUILD_DIR)
-	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@
-
-# Compile assembly sources
-$(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
+# Assembly object files (shared)
+$(BUILD_DIR)/startup_tkm32f499.o: $(STARTUP_DIR)/startup_tkm32f499.s Makefile | $(BUILD_DIR)
 	$(AS) -c $(ASFLAGS) $< -o $@
 
-# Link
-$(BUILD_DIR)/$(PROJECT).elf: $(OBJECTS) Makefile
-	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
+# C object files
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c Makefile | $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@
+
+#######################################
+# Clock Application Target
+#######################################
+CLOCK_PROJECT = clock
+CLOCK_OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(CLOCK_SOURCES:.c=.o)))
+CLOCK_OBJECTS += $(BUILD_DIR)/startup_tkm32f499.o
+
+clock: $(BUILD_DIR)/$(CLOCK_PROJECT).elf $(BUILD_DIR)/$(CLOCK_PROJECT).hex $(BUILD_DIR)/$(CLOCK_PROJECT).bin
+	@echo "Clock application built successfully!"
+	@echo "Flash $(BUILD_DIR)/$(CLOCK_PROJECT).bin to your device"
+
+$(BUILD_DIR)/$(CLOCK_PROJECT).elf: $(CLOCK_OBJECTS) Makefile
+	$(CC) $(CLOCK_OBJECTS) $(LDFLAGS) -Wl,-Map=$(BUILD_DIR)/$(CLOCK_PROJECT).map,--cref -o $@
 	$(SZ) $@
 
-# Create HEX file
-$(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
+$(BUILD_DIR)/$(CLOCK_PROJECT).hex: $(BUILD_DIR)/$(CLOCK_PROJECT).elf | $(BUILD_DIR)
 	$(HEX) $< $@
 
-# Create BIN file
-$(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
+$(BUILD_DIR)/$(CLOCK_PROJECT).bin: $(BUILD_DIR)/$(CLOCK_PROJECT).elf | $(BUILD_DIR)
 	$(BIN) $< $@
+
+#######################################
+# Blink Test Target
+#######################################
+BLINK_PROJECT = blink_test
+BLINK_OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(BLINK_SOURCES:.c=.o)))
+BLINK_OBJECTS += $(BUILD_DIR)/startup_tkm32f499.o
+
+blink_test: $(BUILD_DIR)/$(BLINK_PROJECT).elf $(BUILD_DIR)/$(BLINK_PROJECT).hex $(BUILD_DIR)/$(BLINK_PROJECT).bin
+	@echo "Blink test built successfully!"
+	@echo "Flash $(BUILD_DIR)/$(BLINK_PROJECT).bin to your device"
+
+$(BUILD_DIR)/$(BLINK_PROJECT).elf: $(BLINK_OBJECTS) Makefile
+	$(CC) $(BLINK_OBJECTS) $(LDFLAGS) -Wl,-Map=$(BUILD_DIR)/$(BLINK_PROJECT).map,--cref -o $@
+	$(SZ) $@
+
+$(BUILD_DIR)/$(BLINK_PROJECT).hex: $(BUILD_DIR)/$(BLINK_PROJECT).elf | $(BUILD_DIR)
+	$(HEX) $< $@
+
+$(BUILD_DIR)/$(BLINK_PROJECT).bin: $(BUILD_DIR)/$(BLINK_PROJECT).elf | $(BUILD_DIR)
+	$(BIN) $< $@
+
+#######################################
+# Default and Utility Targets
+#######################################
+
+# Default target - build the clock app
+.DEFAULT_GOAL := clock
+
+# Build all targets
+all: clock blink_test
 
 # Clean
 clean:
 	rm -rf $(BUILD_DIR)
 
-# Flash using OpenOCD (adjust interface/target as needed)
-flash: $(BUILD_DIR)/$(PROJECT).bin
+# Flash clock app using OpenOCD (adjust interface/target as needed)
+flash: $(BUILD_DIR)/$(CLOCK_PROJECT).bin
 	openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
-		-c "program $(BUILD_DIR)/$(PROJECT).bin 0x08000000 verify reset exit"
+		-c "program $(BUILD_DIR)/$(CLOCK_PROJECT).bin 0x08000000 verify reset exit"
 
 # Flash using ST-Link utility
-flash-stlink: $(BUILD_DIR)/$(PROJECT).bin
-	st-flash write $(BUILD_DIR)/$(PROJECT).bin 0x08000000
+flash-stlink: $(BUILD_DIR)/$(CLOCK_PROJECT).bin
+	st-flash write $(BUILD_DIR)/$(CLOCK_PROJECT).bin 0x08000000
+
+# Flash blink test
+flash-blink: $(BUILD_DIR)/$(BLINK_PROJECT).bin
+	openocd -f interface/stlink.cfg -f target/stm32f4x.cfg \
+		-c "program $(BUILD_DIR)/$(BLINK_PROJECT).bin 0x08000000 verify reset exit"
 
 # Debug with GDB
-debug: $(BUILD_DIR)/$(PROJECT).elf
-	$(PREFIX)gdb -x gdbinit $(BUILD_DIR)/$(PROJECT).elf
+debug: $(BUILD_DIR)/$(CLOCK_PROJECT).elf
+	$(PREFIX)gdb -x gdbinit $(BUILD_DIR)/$(CLOCK_PROJECT).elf
 
-# Print size info
-size: $(BUILD_DIR)/$(PROJECT).elf
-	$(SZ) --format=berkeley $(BUILD_DIR)/$(PROJECT).elf
+# Print size info for clock app
+size: $(BUILD_DIR)/$(CLOCK_PROJECT).elf
+	$(SZ) --format=berkeley $(BUILD_DIR)/$(CLOCK_PROJECT).elf
+
+# Print size info for blink test
+size-blink: $(BUILD_DIR)/$(BLINK_PROJECT).elf
+	$(SZ) --format=berkeley $(BUILD_DIR)/$(BLINK_PROJECT).elf
 
 # Phony targets
-.PHONY: all clean flash flash-stlink debug size
+.PHONY: all clock blink_test clean flash flash-stlink flash-blink debug size size-blink
 
 # Dependencies
 -include $(wildcard $(BUILD_DIR)/*.d)

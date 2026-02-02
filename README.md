@@ -7,9 +7,12 @@ A clock project based on the TKM32F499 4.3" SmartBoard (ARM Cortex-M4, 240MHz).
 ```
 Tk499-Clock-/
 ├── src/                    # Source files
-│   ├── main.c              # Main application (LED blink)
+│   ├── clock_main.c        # Clock application with LCD display
+│   ├── lcd.c               # LCD driver implementation
+│   ├── blink_test.c        # LED blink test (hardware verification)
 │   └── system_tkm32f499.c  # System initialization
 ├── inc/                    # Header files
+│   ├── lcd.h               # LCD driver header
 │   ├── tkm32f499.h         # MCU peripheral definitions
 │   └── system_tkm32f499.h  # System function prototypes
 ├── startup/                # Startup code
@@ -57,13 +60,22 @@ Already bundled in `CMSIS/Include/`. No additional installation needed.
 ```bash
 git clone https://github.com/EpicSalvation/Tk499-Clock-.git
 cd Tk499-Clock-
-make
+make            # Build the clock app (default)
+make blink_test # Build the LED blink test
+make all        # Build both targets
+make clean      # Remove build directory
 ```
 
-Build outputs in `build/`:
-- `tkm32f499_clock.bin` - Binary for flashing
-- `tkm32f499_clock.elf` - ELF for debugging
-- `tkm32f499_clock.hex` - Intel HEX format
+### Build Targets
+
+**Clock Application** (`make clock` or just `make`):
+- Full clock app with LCD display
+- Output: `build/clock.bin`, `build/clock.elf`
+
+**LED Blink Test** (`make blink_test`):
+- Minimal test that blinks PA8 LED
+- Useful for verifying hardware and flashing process work
+- Output: `build/blink_test.bin`, `build/blink_test.elf`
 
 ## Flashing
 
@@ -77,7 +89,9 @@ The TKM32F499 uses **USB drag-and-drop** flashing. No external programmer needed
 4. A USB drive named **"TK499_V2"** appears
 5. Copy the binary:
    ```bash
-   cp build/tkm32f499_clock.bin /media/$USER/TK499_V2/
+   cp build/clock.bin /media/$USER/TK499_V2/
+   # Or for the blink test:
+   cp build/blink_test.bin /media/$USER/TK499_V2/
    ```
 6. Wait for the drive to auto-unmount
 7. Press **RESET** to run
@@ -97,11 +111,20 @@ If the board stops working (no "TK499_V2" drive appears):
 6. Wait for auto-unmount, press RESET
 7. Now APP+RESET should show "TK499_V2"
 
-## Current Behavior
+## Application Descriptions
 
-The example blinks the LED on **PA8** (D3 on the SmartBoard):
+### Clock Application
+Displays text and a placeholder time on the 4.3" LCD:
+- Title: "TK499 Clock"
+- Placeholder time display: "12:00:00"
+- Status messages showing LCD is working
+- LED blinks slowly to indicate the program is running
+
+### LED Blink Test
+A minimal test program that blinks the LED on **PA8** (D3 on the SmartBoard):
 - ~1 second on, ~1 second off
-- Confirms the board is running correctly
+- Confirms the hardware and flashing process work correctly
+- Useful for troubleshooting when the LCD isn't working
 
 ## Hardware
 
