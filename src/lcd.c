@@ -258,9 +258,9 @@ static void LCD_FSMC_Init(void)
     /* Configure FSMC GPIO pins as alternate function */
     /* This is simplified - actual configuration depends on exact pin mapping */
 
-    /* Configure GPIOD for FSMC: PD0,1,4,5,7,8-15 */
+    /* Configure GPIOD for FSMC: PD0,1,4,5,7,9-15 (NOT PD8 - that's backlight) */
     GPIOD->CRL = 0xBB44BB44;  /* PD0,1,4,5,7 as AF push-pull */
-    GPIOD->CRH = 0xBBBBBBBB;  /* PD8-15 as AF push-pull */
+    GPIOD->CRH = 0xBBBBBBB3;  /* PD9-15 as AF push-pull, PD8 as GPIO output */
 
     /* Configure GPIOE for FSMC: PE2,7-15 */
     GPIOE->CRL = 0xB444B444;  /* PE2,7 as AF push-pull */
@@ -280,6 +280,9 @@ void LCD_Init(void)
 {
     /* Initialize FSMC interface */
     LCD_FSMC_Init();
+
+    /* Initialize and turn on backlight */
+    LCD_BacklightInit();
 
     lcd_delay(50000);  /* Wait for LCD power stabilization */
 
@@ -460,5 +463,53 @@ void LCD_DrawStringLarge(uint16_t x, uint16_t y, const char *str, uint16_t fg, u
     while (*str) {
         x += LCD_DrawCharLarge(x, y, *str, fg, bg, scale);
         str++;
+    }
+}
+
+/*
+ * Backlight Control
+ *
+ * The backlight is controlled via PD8, which drives the enable pin
+ * of the MP3302 boost converter that powers the LCD backlight LEDs.
+ *
+ * PD8 high = backlight on
+ * PD8 low  = backlight off
+ */
+
+/* Initialize backlight GPIO (PD8 as output) */
+void LCD_BacklightInit(void)
+{
+    /* Enable GPIOD clock (bit 3 of AHB1ENR) */
+    RCC->AHB1ENR |= (1 << 3);
+
+    /* Configure PD8 as push-pull output, 50MHz */
+    /* CRH controls pins 8-15, pin 8 is bits [3:0] */
+    /* MODE=11 (50MHz), CNF=00 (push-pull) -> 0x03 */
+    GPIOD->CRH &= ~(0x0F << 0);  /* Clear bits [3:0] */
+    GPIOD->CRH |= (0x03 << 0);   /* Set output 50MHz push-pull */
+
+    /* Turn backlight on by default */
+    LCD_BacklightOn();
+}
+
+/* Turn backlight on */
+void LCD_BacklightOn(void)
+{
+    GPIOD->BSRR = (1 << 8);  /* Set PD8 high */
+}
+
+/* Turn backlight off */
+void LCD_BacklightOff(void)
+{
+    GPIOD->BSRR = (1 << 24);  /* Set PD8 low (reset) */
+}
+
+/* Set backlight state */
+void LCD_Backlight(uint8_t on)
+{
+    if (on) {
+        LCD_BacklightOn();
+    } else {
+        LCD_BacklightOff();
     }
 }

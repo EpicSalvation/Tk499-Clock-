@@ -96,4 +96,25 @@ void LCD_WriteData(uint16_t data);
  */
 uint16_t LCD_ReadData(void);
 
+/**
+ * Initialize backlight control (PD8)
+ * Called automatically by LCD_Init()
+ */
+void LCD_BacklightInit(void);
+
+/**
+ * Turn backlight on
+ */
+void LCD_BacklightOn(void);
+
+/**
+ * Turn backlight off
+ */
+void LCD_BacklightOff(void);
+
+/**
+ * Set backlight state (1 = on, 0 = off)
+ */
+void LCD_Backlight(uint8_t on);
+
 #endif /* __LCD_H */
