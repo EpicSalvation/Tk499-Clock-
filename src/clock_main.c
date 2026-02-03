@@ -104,6 +104,10 @@ int main(void)
     /* Initialize the LCD */
     LCD_Init();
 
+    /* Initialize PWM brightness control (0-100%) */
+    LCD_BrightnessInit();
+    LCD_SetBrightness(100);
+
     /* Debug: 3 quick blinks to show LCD_Init completed */
     GPIOA->BSRR = (1 << 8); delay(500000); GPIOA->BSRR = (1 << 24); delay(500000);
     GPIOA->BSRR = (1 << 8); delay(500000); GPIOA->BSRR = (1 << 24); delay(500000);

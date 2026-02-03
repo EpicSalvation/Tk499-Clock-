@@ -946,12 +946,38 @@ void LCD_Backlight(uint8_t on)
     }
 }
 
-/* PWM brightness control - simplified version */
+/* PWM brightness control using TIM3 */
 static volatile uint8_t pwm_brightness = 100;
+static volatile uint8_t pwm_counter = 0;
 
 void LCD_BrightnessInit(void)
 {
+    /* Initialize PD8 as output */
     LCD_BacklightInit();
+
+    /* Enable TIM3 clock (APB1, bit 1) */
+    RCC->APB1ENR |= (1 << 1);
+
+    /* Configure TIM3 for 1kHz PWM with 100 steps
+     * APB1 timer clock = 120MHz (assuming APB1 prescaler = 2, timers get x2)
+     * We want 100kHz interrupt rate for 1kHz PWM with 100 levels
+     * PSC = 12-1 = 11 -> 120MHz / 12 = 10MHz
+     * ARR = 100-1 = 99 -> 10MHz / 100 = 100kHz interrupt
+     */
+    TIM3->PSC = 11;
+    TIM3->ARR = 99;
+    TIM3->CNT = 0;
+
+    /* Enable update interrupt */
+    TIM3->DIER = (1 << 0);  /* UIE - Update interrupt enable */
+
+    /* Enable TIM3 interrupt in NVIC (IRQ 29) */
+    NVIC_EnableIRQ(TIM3_IRQn);
+    NVIC_SetPriority(TIM3_IRQn, 2);
+
+    /* Start timer */
+    TIM3->CR1 = (1 << 0);  /* CEN - Counter enable */
+
     pwm_brightness = 100;
 }
 
@@ -959,16 +985,29 @@ void LCD_SetBrightness(uint8_t level)
 {
     if (level > 100) level = 100;
     pwm_brightness = level;
-
-    /* Simple on/off for now */
-    if (level > 0) {
-        LCD_BacklightOn();
-    } else {
-        LCD_BacklightOff();
-    }
 }
 
 uint8_t LCD_GetBrightness(void)
 {
     return pwm_brightness;
+}
+
+/* TIM3 interrupt handler for software PWM */
+void TIM3_IRQHandler(void)
+{
+    /* Clear update interrupt flag */
+    TIM3->SR &= ~(1 << 0);
+
+    /* Increment counter, wrap at 100 */
+    pwm_counter++;
+    if (pwm_counter >= 100) {
+        pwm_counter = 0;
+    }
+
+    /* Compare counter to brightness level */
+    if (pwm_counter < pwm_brightness) {
+        GPIOD->BSRR = (1 << 8);   /* PD8 high - backlight on */
+    } else {
+        GPIOD->BSRR = (1 << 24);  /* PD8 low - backlight off */
+    }
 }

@@ -203,7 +203,24 @@ void FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint32_t color) {
 - **LCD Controller**: HX8369 compatible
 - **Resolution**: 800x480
 - **LCD Reset Pin**: PA14 (not PD6!)
-- **Backlight Pin**: PD8
+- **Backlight Pin**: PD8 (directly controls MP3302 boost converter EN pin)
+
+### Backlight PWM Brightness Control
+
+PD8 controls the MP3302 boost converter enable. For variable brightness, use software PWM via TIM3:
+
+```c
+/* Initialize PWM (call after LCD_Init) */
+LCD_BrightnessInit();
+
+/* Set brightness 0-100% */
+LCD_SetBrightness(75);
+
+/* Get current brightness */
+uint8_t level = LCD_GetBrightness();
+```
+
+PWM implementation uses TIM3 interrupt at 100kHz to generate 1kHz PWM with 100 brightness levels. See `LCD_RENDERING.md` for full details.
 
 ### LCD Reset Sequence
 
