@@ -20,7 +20,9 @@ This document explains how the TKM32F499 clock application renders graphics and 
 
 ## Overview
 
-The LCD is a 480×272 pixel display using 16-bit RGB565 color format. Each pixel requires 2 bytes, giving 65,536 possible colors. The display connects to the microcontroller via the FSMC (Flexible Static Memory Controller), which makes LCD access look like simple memory read/write operations.
+The LCD is an **800x480 pixel** display (TK043F1168 panel with HX8369-compatible controller). The TKM32F499 uses **24-bit RGB888 color** internally, with colors specified as `0x00RRGGBB`. The display connects via the **TK80** peripheral (a custom 8080-style parallel interface), not FSMC.
+
+For compatibility with common color definitions, the API accepts RGB565 colors and converts them internally to RGB888.
 
 ### Coordinate System
 
@@ -36,45 +38,55 @@ The LCD is a 480×272 pixel display using 16-bit RGB565 color format. Each pixel
 ```
 
 - Origin `(0,0)` is the **top-left** corner
-- X increases to the right (0-479)
-- Y increases downward (0-271)
+- X increases to the right (0-799)
+- Y increases downward (0-479)
 
 ---
 
 ## Hardware Interface
 
-The LCD connects via **FSMC** (Flexible Static Memory Controller), which maps the LCD to memory addresses:
+The LCD connects via the **TK80** peripheral (a custom 8080-style parallel interface at `0x60000000`):
 
 ```c
-#define LCD_BASE   ((uint32_t)0x60000000)
-#define LCD_CMD    (*(volatile uint16_t *)(LCD_BASE))           // Commands
-#define LCD_DATA   (*(volatile uint16_t *)(LCD_BASE + (1<<19))) // Data
+/* TK80 LCD Controller Registers */
+typedef struct {
+    volatile uint32_t CR;       /* Control Register */
+    volatile uint32_t CFGR1;    /* Configuration Register 1 */
+    volatile uint32_t CFGR2;    /* Configuration Register 2 */
+    volatile uint32_t SR;       /* Status Register */
+    volatile uint32_t CMDIR;    /* Command Input Register */
+    volatile uint32_t DINR;     /* Data Input Register */
+    /* ... more registers ... */
+    volatile uint32_t CFGR3;    /* Config Reg 3 (pixel count for block fill) */
+} TK80_TypeDef;
+
+#define TK80    ((TK80_TypeDef *)0x60000000)
 ```
 
 ### How It Works
 
-The FSMC makes the LCD appear as two memory locations:
+The TK80 provides dedicated registers for LCD commands and data:
 
-| Address | Purpose | Usage |
-|---------|---------|-------|
-| `0x60000000` | Command register | Tell LCD what operation to perform |
-| `0x60080000` | Data register | Send pixel data or parameters |
+| Register | Purpose | Usage |
+|----------|---------|-------|
+| `TK80->CMDIR` | Command register | Send LCD commands (0x2A, 0x2B, 0x2C, etc.) |
+| `TK80->DINR` | Data register | Send pixel data (24-bit RGB888) |
+| `TK80->SR` | Status register | Check busy flag (bit 16) |
+| `TK80->CFGR3` | Pixel count | For hardware-accelerated block fills |
 
-The difference is controlled by address line **A18**:
-- A18 = 0 → Command mode
-- A18 = 1 → Data mode
-
-Writing to these addresses triggers the appropriate control signals (chip select, read/write strobe, etc.) automatically.
+The TK80 handles all timing and control signals automatically.
 
 ```c
 void LCD_WriteCmd(uint16_t cmd)
 {
-    LCD_CMD = cmd;    // Write to 0x60000000
+    TK80->CMDIR = cmd;
+    while (TK80->SR & 0x10000);  /* Wait for not busy */
 }
 
 void LCD_WriteData(uint16_t data)
 {
-    LCD_DATA = data;  // Write to 0x60080000
+    TK80->DINR = data;
+    /* No wait needed for streaming pixel data */
 }
 ```
 
@@ -326,8 +338,10 @@ uint8_t LCD_DrawCharLarge(uint16_t x, uint16_t y, char c,
 |-------|---------------|------------------|-------------------|
 | 1× | 8 × 16 | 64 px | 16 px |
 | 2× | 16 × 32 | 128 px | 32 px |
-| 3× | 24 × 48 | 192 px | 48 px |
 | 4× | 32 × 64 | 256 px | 64 px |
+| 6× | 48 × 96 | 384 px | 96 px |
+
+The clock app uses **6× scaling** for the time display, which works well on the 800×480 screen.
 
 ---
 
@@ -408,16 +422,16 @@ uint16_t string_width(const char *str, uint8_t scale)
 ### Layout Constants in the Clock App
 
 ```c
-#define BAR_HEIGHT      24      // Height of header/footer bars
-#define BAR_TEXT_Y      4       // Vertical padding in bars
-#define TIME_SCALE      4       // 4× scaling for time
+#define BAR_HEIGHT      32      // Height of header/footer bars
+#define BAR_TEXT_Y      8       // Vertical padding in bars
+#define TIME_SCALE      6       // 6× scaling for time
 #define TIME_CHARS      8       // "12:00:00"
 
-// Calculate centered time position
-#define TIME_WIDTH   (TIME_CHARS * 8 * TIME_SCALE)    // 256 pixels
-#define TIME_HEIGHT  (16 * TIME_SCALE)                 // 64 pixels
-#define TIME_X       ((LCD_WIDTH - TIME_WIDTH) / 2)    // 112
-#define TIME_Y       ((LCD_HEIGHT - TIME_HEIGHT) / 2)  // 104
+// Calculate centered time position (800×480 display)
+#define TIME_WIDTH   (TIME_CHARS * 8 * TIME_SCALE)    // 384 pixels
+#define TIME_HEIGHT  (16 * TIME_SCALE)                 // 96 pixels
+#define TIME_X       ((LCD_WIDTH - TIME_WIDTH) / 2)    // 208
+#define TIME_Y       ((LCD_HEIGHT - TIME_HEIGHT) / 2)  // 192
 ```
 
 ### Text Alignment Examples
@@ -437,22 +451,22 @@ LCD_DrawString(LCD_WIDTH - string_width("Right", 1) - 4, y, "Right", fg, bg);
 
 ## Complete Example
 
-Here's how the clock app screen is drawn:
+Here's how the clock app screen is drawn (800×480 display):
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│ TK499            Clock Demo                              v1.0  │ ← Blue bar (24px)
-├────────────────────────────────────────────────────────────────┤
-│                                                                │
-│                 ═══════════════════════                        │ ← White line
-│                                                                │
-│                       12:00:00                                 │ ← Green time (4×)
-│                                                                │
-│                 ═══════════════════════                        │ ← White line
-│                                                                │
-├────────────────────────────────────────────────────────────────┤
-│ Status: OK     TKM32F499 SmartBoard                    240MHz  │ ← Orange bar (24px)
-└────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ TK499                      Clock Demo                                   v1.0 │ ← Blue bar (32px)
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│                    ════════════════════════════════════                      │ ← White line
+│                                                                              │
+│                              12:00:00                                        │ ← Green time (6×)
+│                                                                              │
+│                    ════════════════════════════════════                      │ ← White line
+│                                                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Status: OK              TKM32F499 SmartBoard                          240MHz │ ← Orange bar (32px)
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Drawing Order
@@ -483,7 +497,7 @@ LCD_DrawString(4, LCD_HEIGHT - BAR_HEIGHT + BAR_TEXT_Y,
 LCD_FillRect(LINE_MARGIN, LINE_ABOVE_Y,
              LCD_WIDTH - (LINE_MARGIN * 2), LINE_THICKNESS, COLOR_WHITE);
 
-// 7. Draw centered time
+// 7. Draw centered time (6× scale)
 LCD_DrawStringLarge(TIME_X, TIME_Y, "12:00:00", COLOR_GREEN, COLOR_BLACK, TIME_SCALE);
 
 // 8. Draw line below time
@@ -495,18 +509,30 @@ LCD_FillRect(LINE_MARGIN, LINE_BELOW_Y,
 
 ## Color Reference
 
-Colors use **RGB565** format (16 bits: 5 red, 6 green, 5 blue):
+The TK80 uses **RGB888** format internally (24 bits: 8 red, 8 green, 8 blue), but for convenience the API accepts **RGB565** format and converts automatically.
 
-| Color | Hex Value | RGB565 Bits |
+### RGB565 Colors (API accepts these)
+
+| Color | Hex Value | Description |
 |-------|-----------|-------------|
-| Black | `0x0000` | R=0, G=0, B=0 |
-| White | `0xFFFF` | R=31, G=63, B=31 |
-| Red | `0xF800` | R=31, G=0, B=0 |
-| Green | `0x07E0` | R=0, G=63, B=0 |
-| Blue | `0x001F` | R=0, G=0, B=31 |
-| Yellow | `0xFFE0` | R=31, G=63, B=0 |
-| Cyan | `0x07FF` | R=0, G=63, B=31 |
-| Orange | `0xFD20` | R=31, G=41, B=0 |
+| Black | `0x0000` | No color |
+| White | `0xFFFF` | Full brightness |
+| Red | `0xF800` | Pure red |
+| Green | `0x07E0` | Pure green |
+| Blue | `0x001F` | Pure blue |
+| Yellow | `0xFFE0` | Red + Green |
+| Cyan | `0x07FF` | Green + Blue |
+| Orange | `0xFD20` | Red + some Green |
+
+### RGB888 Colors (hardware native)
+
+| Color | Hex Value | Format |
+|-------|-----------|--------|
+| Black | `0x00000000` | 0x00RRGGBB |
+| White | `0x00FFFFFF` | |
+| Red | `0x00FF0000` | |
+| Green | `0x0000FF00` | |
+| Blue | `0x000000FF` | |
 
 ### Creating Custom Colors
 
@@ -516,6 +542,9 @@ Colors use **RGB565** format (16 bits: 5 red, 6 green, 5 blue):
 
 // Example: Create a purple color (red + blue)
 #define COLOR_PURPLE RGB565(20, 0, 20)  // 0xA014
+
+// RGB888 (native format)
+#define RGB888(r, g, b) (((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF))
 ```
 
 ---

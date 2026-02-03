@@ -96,6 +96,10 @@ typedef enum IRQn {
 #define APB1PERIPH_BASE     (PERIPH_BASE)
 #define APB2PERIPH_BASE     (PERIPH_BASE + 0x10000)
 #define AHB1PERIPH_BASE     (PERIPH_BASE + 0x20000)
+#define AHB2PERIPH_BASE     ((uint32_t)0x60000000)
+
+/* TK80 LCD Controller Base Address */
+#define TK80_BASE           (AHB2PERIPH_BASE + 0x00000000)
 
 /* GPIO Base Addresses */
 #define GPIOA_BASE          (AHB1PERIPH_BASE + 0x0000)
@@ -114,39 +118,63 @@ typedef enum IRQn {
 #define TIM4_BASE           (APB1PERIPH_BASE + 0x0800)
 
 /* ============================================================ */
-/* GPIO Registers (STM32F1-style CRL/CRH)                        */
+/* GPIO Registers (TKM32F499 has EXTENDED GPIO with 24 pins!)    */
 /* ============================================================ */
 typedef struct {
-    volatile uint32_t CRL;      /* Control Register Low (pins 0-7) */
-    volatile uint32_t CRH;      /* Control Register High (pins 8-15) */
-    volatile uint32_t IDR;      /* Input Data Register */
-    volatile uint32_t ODR;      /* Output Data Register */
-    volatile uint32_t BSRR;     /* Bit Set/Reset Register */
-    volatile uint32_t BRR;      /* Bit Reset Register */
-    volatile uint32_t LCKR;     /* Lock Register */
+    volatile uint32_t CRL;      /* 0x00: Control Register Low (pins 0-7) */
+    volatile uint32_t CRH;      /* 0x04: Control Register High (pins 8-15) */
+    volatile uint32_t IDR;      /* 0x08: Input Data Register */
+    volatile uint32_t ODR;      /* 0x0C: Output Data Register */
+    volatile uint32_t BSRR;     /* 0x10: Bit Set/Reset Register */
+    volatile uint32_t BRR;      /* 0x14: Bit Reset Register */
+    volatile uint32_t LCKR;     /* 0x18: Lock Register */
+    uint32_t RESERVED;          /* 0x1C: Reserved */
+    volatile uint32_t AFRL;     /* 0x20: Alternate Function Low (pins 0-7) */
+    volatile uint32_t AFRH;     /* 0x24: Alternate Function High (pins 8-15) */
+    volatile uint32_t CRH_EXT;  /* 0x28: Control Register Extended (pins 16-23) */
+    volatile uint32_t BSRR_EXT; /* 0x2C: Bit Set/Reset Extended */
+    volatile uint32_t AFRH_EXT; /* 0x30: Alternate Function Extended (pins 16-23) */
 } GPIO_TypeDef;
 
 /* ============================================================ */
-/* RCC Registers                                                 */
+/* TK80 LCD Controller Registers                                 */
 /* ============================================================ */
 typedef struct {
-    volatile uint32_t CR;
-    volatile uint32_t PLLCFGR;
-    volatile uint32_t CFGR;
-    volatile uint32_t CIR;
-    volatile uint32_t AHB1RSTR;
-    volatile uint32_t AHB2RSTR;
-    volatile uint32_t AHB3RSTR;
-    uint32_t RESERVED0;
-    volatile uint32_t APB1RSTR;
-    volatile uint32_t APB2RSTR;
-    uint32_t RESERVED1[2];
-    volatile uint32_t AHB1ENR;
-    volatile uint32_t AHB2ENR;
-    volatile uint32_t AHB3ENR;
-    uint32_t RESERVED2;
-    volatile uint32_t APB1ENR;
-    volatile uint32_t APB2ENR;
+    volatile uint32_t CR;       /* Control Register (offset 0x00) */
+    volatile uint32_t CFGR1;    /* Configuration Register 1 (offset 0x04) */
+    volatile uint32_t CFGR2;    /* Configuration Register 2 (offset 0x08) */
+    volatile uint32_t SR;       /* Status Register (offset 0x0C) */
+    volatile uint32_t CMDIR;    /* Command Input Register (offset 0x10) */
+    volatile uint32_t DINR;     /* Data Input Register (offset 0x14) */
+    volatile uint32_t CMDOR;    /* Command Output Register (offset 0x18) */
+    uint32_t RESERVED0;         /* Reserved (offset 0x1C) */
+    volatile uint32_t DOUTR;    /* Data Output Register (offset 0x20) */
+    volatile uint32_t BRDR;     /* Border Register (offset 0x24) */
+    uint32_t RESERVED1;         /* Reserved (offset 0x28) */
+    uint32_t RESERVED2;         /* Reserved (offset 0x2C) */
+    volatile uint32_t CFGR3;    /* Configuration Register 3 (offset 0x30) */
+} TK80_TypeDef;
+
+/* ============================================================ */
+/* RCC Registers (TKM32F499 specific layout!)                    */
+/* ============================================================ */
+typedef struct {
+    volatile uint32_t CR;           /* offset 0x00 */
+    volatile uint32_t PLLCFGR;      /* offset 0x04 */
+    volatile uint32_t CFGR;         /* offset 0x08 */
+    volatile uint32_t CIR;          /* offset 0x0C */
+    volatile uint32_t AHB1RSTR;     /* offset 0x10 */
+    volatile uint32_t AHB2RSTR;     /* offset 0x14 */
+    volatile uint32_t APB1RSTR;     /* offset 0x18 */
+    volatile uint32_t APB2RSTR;     /* offset 0x1C */
+    volatile uint32_t AHB1ENR;      /* offset 0x20 */
+    volatile uint32_t AHB2ENR;      /* offset 0x24 */
+    volatile uint32_t APB1ENR;      /* offset 0x28 */
+    volatile uint32_t APB2ENR;      /* offset 0x2C */
+    volatile uint32_t BDCR;         /* offset 0x30 */
+    volatile uint32_t CSR;          /* offset 0x34 */
+    volatile uint32_t PLLLCDCFGR;   /* offset 0x38 */
+    volatile uint32_t PLLDCKCFGR;   /* offset 0x3C */
 } RCC_TypeDef;
 
 /* ============================================================ */
@@ -188,6 +216,7 @@ typedef struct {
 #define TIM2    ((TIM_TypeDef *)TIM2_BASE)
 #define TIM3    ((TIM_TypeDef *)TIM3_BASE)
 #define TIM4    ((TIM_TypeDef *)TIM4_BASE)
+#define TK80    ((TK80_TypeDef *)TK80_BASE)
 
 /* ============================================================ */
 /* GPIO Configuration Types (STM32F1-style)                      */
@@ -236,13 +265,19 @@ typedef struct {
 #define GPIO_Pin_15     ((uint16_t)0x8000)
 #define GPIO_Pin_All    ((uint16_t)0xFFFF)
 
-/* RCC AHB Peripheral Clock Enable */
+/* RCC AHB1 Peripheral Clock Enable */
 #define RCC_AHBPeriph_GPIOA     ((uint32_t)0x00000001)
 #define RCC_AHBPeriph_GPIOB     ((uint32_t)0x00000002)
 #define RCC_AHBPeriph_GPIOC     ((uint32_t)0x00000004)
 #define RCC_AHBPeriph_GPIOD     ((uint32_t)0x00000008)
 #define RCC_AHBPeriph_GPIOE     ((uint32_t)0x00000010)
 #define RCC_AHBPeriph_GPIOF     ((uint32_t)0x00000020)
+
+/* RCC AHB2 Peripheral Clock Enable */
+#define RCC_AHB2Periph_TK80     ((uint32_t)0x80000000)
+
+/* GPIO Alternate Function for TK80 */
+#define GPIO_AF_TK80            ((uint8_t)0x0C)
 
 /* ============================================================ */
 /* Function Prototypes                                           */

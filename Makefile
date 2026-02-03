@@ -38,6 +38,18 @@ CLOCK_SOURCES = \
 BLINK_SOURCES = \
 	$(SRC_DIR)/blink_test.c
 
+# LCD test sources (minimal standalone test)
+LCD_TEST_SOURCES = \
+	$(SRC_DIR)/lcd_test.c
+
+# TK80 minimal test sources
+TK80_MIN_SOURCES = \
+	$(SRC_DIR)/tk80_min_test.c
+
+# LCD fill only test sources
+LCD_FILL_SOURCES = \
+	$(SRC_DIR)/lcd_fill_only.c
+
 # Assembly sources
 ASM_SOURCES = \
 	$(STARTUP_DIR)/startup_tkm32f499.s
@@ -120,6 +132,69 @@ $(BUILD_DIR)/$(BLINK_PROJECT).bin: $(BUILD_DIR)/$(BLINK_PROJECT).elf | $(BUILD_D
 	$(BIN) $< $@
 
 #######################################
+# LCD Test Target
+#######################################
+LCD_TEST_PROJECT = lcd_test
+LCD_TEST_OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(LCD_TEST_SOURCES:.c=.o)))
+LCD_TEST_OBJECTS += $(BUILD_DIR)/startup_tkm32f499.o
+
+lcd_test: $(BUILD_DIR)/$(LCD_TEST_PROJECT).elf $(BUILD_DIR)/$(LCD_TEST_PROJECT).hex $(BUILD_DIR)/$(LCD_TEST_PROJECT).bin
+	@echo "LCD test built successfully!"
+	@echo "Flash $(BUILD_DIR)/$(LCD_TEST_PROJECT).bin to your device"
+
+$(BUILD_DIR)/$(LCD_TEST_PROJECT).elf: $(LCD_TEST_OBJECTS) Makefile
+	$(CC) $(LCD_TEST_OBJECTS) $(LDFLAGS) -Wl,-Map=$(BUILD_DIR)/$(LCD_TEST_PROJECT).map,--cref -o $@
+	$(SZ) $@
+
+$(BUILD_DIR)/$(LCD_TEST_PROJECT).hex: $(BUILD_DIR)/$(LCD_TEST_PROJECT).elf | $(BUILD_DIR)
+	$(HEX) $< $@
+
+$(BUILD_DIR)/$(LCD_TEST_PROJECT).bin: $(BUILD_DIR)/$(LCD_TEST_PROJECT).elf | $(BUILD_DIR)
+	$(BIN) $< $@
+
+#######################################
+# TK80 Minimal Test Target
+#######################################
+TK80_MIN_PROJECT = tk80_min_test
+TK80_MIN_OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(TK80_MIN_SOURCES:.c=.o)))
+TK80_MIN_OBJECTS += $(BUILD_DIR)/startup_tkm32f499.o
+
+tk80_min_test: $(BUILD_DIR)/$(TK80_MIN_PROJECT).elf $(BUILD_DIR)/$(TK80_MIN_PROJECT).hex $(BUILD_DIR)/$(TK80_MIN_PROJECT).bin
+	@echo "TK80 minimal test built successfully!"
+	@echo "Flash $(BUILD_DIR)/$(TK80_MIN_PROJECT).bin to your device"
+
+$(BUILD_DIR)/$(TK80_MIN_PROJECT).elf: $(TK80_MIN_OBJECTS) Makefile
+	$(CC) $(TK80_MIN_OBJECTS) $(LDFLAGS) -Wl,-Map=$(BUILD_DIR)/$(TK80_MIN_PROJECT).map,--cref -o $@
+	$(SZ) $@
+
+$(BUILD_DIR)/$(TK80_MIN_PROJECT).hex: $(BUILD_DIR)/$(TK80_MIN_PROJECT).elf | $(BUILD_DIR)
+	$(HEX) $< $@
+
+$(BUILD_DIR)/$(TK80_MIN_PROJECT).bin: $(BUILD_DIR)/$(TK80_MIN_PROJECT).elf | $(BUILD_DIR)
+	$(BIN) $< $@
+
+#######################################
+# LCD Fill Only Test Target
+#######################################
+LCD_FILL_PROJECT = lcd_fill_only
+LCD_FILL_OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(LCD_FILL_SOURCES:.c=.o)))
+LCD_FILL_OBJECTS += $(BUILD_DIR)/startup_tkm32f499.o
+
+lcd_fill_only: $(BUILD_DIR)/$(LCD_FILL_PROJECT).elf $(BUILD_DIR)/$(LCD_FILL_PROJECT).hex $(BUILD_DIR)/$(LCD_FILL_PROJECT).bin
+	@echo "LCD fill only test built successfully!"
+	@echo "Flash $(BUILD_DIR)/$(LCD_FILL_PROJECT).bin to your device"
+
+$(BUILD_DIR)/$(LCD_FILL_PROJECT).elf: $(LCD_FILL_OBJECTS) Makefile
+	$(CC) $(LCD_FILL_OBJECTS) $(LDFLAGS) -Wl,-Map=$(BUILD_DIR)/$(LCD_FILL_PROJECT).map,--cref -o $@
+	$(SZ) $@
+
+$(BUILD_DIR)/$(LCD_FILL_PROJECT).hex: $(BUILD_DIR)/$(LCD_FILL_PROJECT).elf | $(BUILD_DIR)
+	$(HEX) $< $@
+
+$(BUILD_DIR)/$(LCD_FILL_PROJECT).bin: $(BUILD_DIR)/$(LCD_FILL_PROJECT).elf | $(BUILD_DIR)
+	$(BIN) $< $@
+
+#######################################
 # Default and Utility Targets
 #######################################
 
@@ -160,7 +235,7 @@ size-blink: $(BUILD_DIR)/$(BLINK_PROJECT).elf
 	$(SZ) --format=berkeley $(BUILD_DIR)/$(BLINK_PROJECT).elf
 
 # Phony targets
-.PHONY: all clock blink_test clean flash flash-stlink flash-blink debug size size-blink
+.PHONY: all clock blink_test lcd_test tk80_min_test lcd_fill_only clean flash flash-stlink flash-blink debug size size-blink
 
 # Dependencies
 -include $(wildcard $(BUILD_DIR)/*.d)

@@ -1,8 +1,10 @@
 /**
  * TKM32F499 LCD Driver
  *
- * Driver for the 4.3" LCD on the TK499 SmartBoard.
- * Uses parallel 8080-style interface via FSMC.
+ * Driver for the 4.3" LCD (TK043F1168) on the TK499 SmartBoard.
+ * Uses TK80 parallel interface (NOT FSMC).
+ *
+ * Based on reference code from TK499_LCD_TK043F1168_ShowChar_Fast_mode
  */
 
 #include "lcd.h"
@@ -14,6 +16,122 @@ static void lcd_delay(volatile uint32_t count)
     while (count--) {
         __asm volatile ("nop");
     }
+}
+
+/* ============================================================ */
+/* 7-Segment Clock Digit Renderer                               */
+/* Draws digits using filled rectangles for clean appearance    */
+/* ============================================================ */
+
+/* 7-segment digit dimensions */
+#define SEG_DIGIT_WIDTH     40      /* Total digit width */
+#define SEG_DIGIT_HEIGHT    70      /* Total digit height */
+#define SEG_THICKNESS       8       /* Segment thickness */
+#define SEG_GAP             2       /* Gap between segments */
+#define SEG_COLON_WIDTH     16      /* Colon is narrower */
+#define SEG_COLON_DOT       10      /* Colon dot size */
+
+/*
+ * 7-segment layout:
+ *    AAAA
+ *   F    B
+ *   F    B
+ *    GGGG
+ *   E    C
+ *   E    C
+ *    DDDD
+ *
+ * Segment bits: 0=A, 1=B, 2=C, 3=D, 4=E, 5=F, 6=G
+ */
+static const uint8_t seg_patterns[10] = {
+    0x3F,  /* 0: ABCDEF  = 0011 1111 */
+    0x06,  /* 1: BC      = 0000 0110 */
+    0x5B,  /* 2: ABDEG   = 0101 1011 */
+    0x4F,  /* 3: ABCDG   = 0100 1111 */
+    0x66,  /* 4: BCFG    = 0110 0110 */
+    0x6D,  /* 5: ACDFG   = 0110 1101 */
+    0x7D,  /* 6: ACDEFG  = 0111 1101 */
+    0x07,  /* 7: ABC     = 0000 0111 */
+    0x7F,  /* 8: ABCDEFG = 0111 1111 */
+    0x6F,  /* 9: ABCDFG  = 0110 1111 */
+};
+
+/* Draw a single 7-segment digit */
+static void draw_7seg_digit(uint16_t x, uint16_t y, uint8_t digit, uint16_t fg, uint16_t bg)
+{
+    uint8_t segs;
+    uint16_t hlen, vlen;
+
+    /* Fill background */
+    LCD_FillRect(x, y, SEG_DIGIT_WIDTH, SEG_DIGIT_HEIGHT, bg);
+
+    if (digit > 9) return;
+    segs = seg_patterns[digit];
+
+    /* Segment dimensions */
+    hlen = SEG_DIGIT_WIDTH - 2 * SEG_THICKNESS - 2 * SEG_GAP;  /* Horizontal segment length */
+    vlen = (SEG_DIGIT_HEIGHT - 3 * SEG_THICKNESS) / 2 - SEG_GAP;  /* Vertical segment length */
+
+    /* Segment A (top horizontal) */
+    if (segs & 0x01) {
+        LCD_FillRect(x + SEG_THICKNESS + SEG_GAP, y, hlen, SEG_THICKNESS, fg);
+    }
+
+    /* Segment B (upper right vertical) */
+    if (segs & 0x02) {
+        LCD_FillRect(x + SEG_DIGIT_WIDTH - SEG_THICKNESS, y + SEG_THICKNESS + SEG_GAP,
+                     SEG_THICKNESS, vlen, fg);
+    }
+
+    /* Segment C (lower right vertical) */
+    if (segs & 0x04) {
+        LCD_FillRect(x + SEG_DIGIT_WIDTH - SEG_THICKNESS,
+                     y + SEG_DIGIT_HEIGHT / 2 + SEG_THICKNESS / 2 + SEG_GAP,
+                     SEG_THICKNESS, vlen, fg);
+    }
+
+    /* Segment D (bottom horizontal) */
+    if (segs & 0x08) {
+        LCD_FillRect(x + SEG_THICKNESS + SEG_GAP, y + SEG_DIGIT_HEIGHT - SEG_THICKNESS,
+                     hlen, SEG_THICKNESS, fg);
+    }
+
+    /* Segment E (lower left vertical) */
+    if (segs & 0x10) {
+        LCD_FillRect(x, y + SEG_DIGIT_HEIGHT / 2 + SEG_THICKNESS / 2 + SEG_GAP,
+                     SEG_THICKNESS, vlen, fg);
+    }
+
+    /* Segment F (upper left vertical) */
+    if (segs & 0x20) {
+        LCD_FillRect(x, y + SEG_THICKNESS + SEG_GAP, SEG_THICKNESS, vlen, fg);
+    }
+
+    /* Segment G (middle horizontal) */
+    if (segs & 0x40) {
+        LCD_FillRect(x + SEG_THICKNESS + SEG_GAP, y + SEG_DIGIT_HEIGHT / 2 - SEG_THICKNESS / 2,
+                     hlen, SEG_THICKNESS, fg);
+    }
+}
+
+/* Draw colon for clock display */
+static void draw_colon(uint16_t x, uint16_t y, uint16_t fg, uint16_t bg)
+{
+    uint16_t dot_x, dot_y1, dot_y2;
+
+    /* Fill background */
+    LCD_FillRect(x, y, SEG_COLON_WIDTH, SEG_DIGIT_HEIGHT, bg);
+
+    /* Center the dots horizontally */
+    dot_x = x + (SEG_COLON_WIDTH - SEG_COLON_DOT) / 2;
+
+    /* Position dots at 1/3 and 2/3 height */
+    dot_y1 = y + SEG_DIGIT_HEIGHT / 3 - SEG_COLON_DOT / 2;
+    dot_y2 = y + 2 * SEG_DIGIT_HEIGHT / 3 - SEG_COLON_DOT / 2;
+
+    /* Draw the two dots */
+    LCD_FillRect(dot_x, dot_y1, SEG_COLON_DOT, SEG_COLON_DOT, fg);
+    LCD_FillRect(dot_x, dot_y2, SEG_COLON_DOT, SEG_COLON_DOT, fg);
 }
 
 /* 8x16 Font Data - ASCII 32-127 (space to ~) */
@@ -212,116 +330,385 @@ static const uint8_t font8x16[][16] = {
     {0x00,0x00,0x76,0xDC,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
 };
 
-/* FSMC GPIO Pin Configuration */
-/* Data pins: PD0-1, PD8-15, PE7-15 */
-/* Control pins: PD4(RD), PD5(WR), PD7(CS), PE2(RS) or similar */
+/* Helper to set GPIO alternate function for a single pin */
+static void GPIO_SetAF(GPIO_TypeDef *GPIOx, uint8_t pin, uint8_t af)
+{
+    if (pin < 8) {
+        GPIOx->AFRL &= ~((uint32_t)0xF << (pin * 4));
+        GPIOx->AFRL |= ((uint32_t)af << (pin * 4));
+    } else {
+        GPIOx->AFRH &= ~((uint32_t)0xF << ((pin - 8) * 4));
+        GPIOx->AFRH |= ((uint32_t)af << ((pin - 8) * 4));
+    }
+}
+
+/* Initialize TK80 interface and GPIO */
+static void LCD_TK80_Init(void)
+{
+    int i;
+
+    /* Enable TK80 clock (bit 31 of AHB2ENR) */
+    RCC->AHB2ENR |= RCC_AHB2Periph_TK80;
+
+    /* Enable GPIO clocks for GPIOB, GPIOD, GPIOE */
+    RCC->AHB1ENR |= (1 << 1) | (1 << 3) | (1 << 4);  /* GPIOB, GPIOD, GPIOE */
+    lcd_delay(1000);
+
+    /* Configure GPIOB pins 8-11 as AF push-pull for TK80 control signals */
+    /* PB8=RD, PB9=WR, PB10=RS, PB11=CS */
+    for (i = 8; i <= 11; i++) {
+        /* Set as AF push-pull, 2MHz */
+        GPIOB->CRH &= ~((uint32_t)0xF << ((i - 8) * 4));
+        GPIOB->CRH |= ((uint32_t)0xA << ((i - 8) * 4));  /* 0xA = AF push-pull, 2MHz */
+        GPIO_SetAF(GPIOB, i, GPIO_AF_TK80);
+    }
+
+    /* Configure GPIOE pins 0-23 as AF push-pull for TK80 24-bit data bus */
+    /* PE0-7: Blue channel */
+    GPIOE->CRL = 0xAAAAAAAA;      /* All pins 0-7 as AF push-pull, 2MHz */
+    GPIOE->AFRL = 0xCCCCCCCC;     /* AF12 for pins 0-7 */
+
+    /* PE8-15: Green channel */
+    GPIOE->CRH = 0xAAAAAAAA;      /* All pins 8-15 as AF push-pull, 2MHz */
+    GPIOE->AFRH = 0xCCCCCCCC;     /* AF12 for pins 8-15 */
+
+    /* PE16-23: Red channel - CRITICAL for 24-bit color! */
+    GPIOE->CRH_EXT = 0xAAAAAAAA;  /* All pins 16-23 as AF push-pull, 2MHz */
+    GPIOE->AFRH_EXT = 0xCCCCCCCC; /* AF12 for pins 16-23 */
+
+    /* Configure PD8 as push-pull output for backlight */
+    GPIOD->CRH &= ~(0x0F << 0);
+    GPIOD->CRH |= (0x02 << 0);  /* Output 2MHz push-pull */
+
+    /* Configure TK80 timing registers */
+    TK80->CFGR1 = 0x05050102;
+    TK80->CFGR2 = 0x0501;
+}
 
 /* Write command to LCD */
 void LCD_WriteCmd(uint16_t cmd)
 {
-    LCD_CMD = cmd;
+    TK80->CMDIR = cmd;
+    while (TK80->SR & 0x10000);  /* Wait for TK80 ready */
 }
 
 /* Write data to LCD */
 void LCD_WriteData(uint16_t data)
 {
-    LCD_DATA = data;
+    TK80->DINR = data;
+    while (TK80->SR & 0x10000);  /* Wait for TK80 ready */
 }
 
 /* Read data from LCD */
 uint16_t LCD_ReadData(void)
 {
-    return LCD_DATA;
-}
-
-/* Write a register value */
-static void LCD_WriteReg(uint16_t reg, uint16_t value)
-{
-    LCD_WriteCmd(reg);
-    LCD_WriteData(value);
-}
-
-/* Initialize FSMC for LCD interface */
-static void LCD_FSMC_Init(void)
-{
-    /* FSMC registers */
-    volatile uint32_t *FSMC_BCR1 = (volatile uint32_t *)0xA0000000;
-    volatile uint32_t *FSMC_BTR1 = (volatile uint32_t *)0xA0000004;
-
-    /* Enable FSMC clock (bit 8 of AHB3ENR) */
-    RCC->AHB3ENR |= (1 << 0);
-
-    /* Enable GPIO clocks for FSMC pins */
-    RCC->AHB1ENR |= (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
-    lcd_delay(1000);
-
-    /* Configure FSMC GPIO pins as alternate function */
-    /* This is simplified - actual configuration depends on exact pin mapping */
-
-    /* Configure GPIOD for FSMC: PD0,1,4,5,7,9-15 (NOT PD8 - that's backlight) */
-    GPIOD->CRL = 0xBB44BB44;  /* PD0,1,4,5,7 as AF push-pull */
-    GPIOD->CRH = 0xBBBBBBB3;  /* PD9-15 as AF push-pull, PD8 as GPIO output */
-
-    /* Configure GPIOE for FSMC: PE2,7-15 */
-    GPIOE->CRL = 0xB444B444;  /* PE2,7 as AF push-pull */
-    GPIOE->CRH = 0xBBBBBBBB;  /* PE8-15 as AF push-pull */
-
-    /* Configure FSMC Bank 1 for LCD (NOR/SRAM) */
-    /* BCR1: MBKEN=1, MUXEN=0, MTYP=0 (SRAM), MWID=01 (16-bit), WREN=1 */
-    *FSMC_BCR1 = 0x00001011;
-
-    /* BTR1: Setup timing for LCD */
-    /* ADDSET=5, DATAST=9 (adjust for your LCD) */
-    *FSMC_BTR1 = 0x00000905;
+    return TK80->DOUTR;
 }
 
 /* Initialize the LCD controller */
 void LCD_Init(void)
 {
-    /* Initialize FSMC interface */
-    LCD_FSMC_Init();
+    int i;
 
-    /* Initialize and turn on backlight */
-    LCD_BacklightInit();
+    /* Initialize TK80 interface */
+    LCD_TK80_Init();
 
-    lcd_delay(50000);  /* Wait for LCD power stabilization */
+    /* Turn on backlight */
+    LCD_BacklightOn();
 
-    /* LCD initialization sequence */
-    /* This is a generic sequence - adjust for your specific LCD controller */
-
-    /* Software reset */
-    LCD_WriteCmd(0x01);
     lcd_delay(50000);
 
-    /* Exit sleep mode */
-    LCD_WriteCmd(0x11);
-    lcd_delay(50000);
+    /* =================== TK043F1168 (HX8369) Initialization =================== */
 
-    /* Pixel format: 16-bit RGB565 */
+    /* Color lookup table initialization */
+    LCD_WriteCmd(0x2D);
+    for (i = 0; i <= 63; i++) {
+        LCD_WriteData(i * 8);  /* Red lookup */
+    }
+    for (i = 0; i <= 63; i++) {
+        LCD_WriteData(i * 4);  /* Green lookup */
+    }
+    for (i = 0; i <= 63; i++) {
+        LCD_WriteData(i * 8);  /* Blue lookup */
+    }
+
+    /* Set EXTC */
+    LCD_WriteCmd(0xB9);
+    LCD_WriteData(0xFF);
+    LCD_WriteData(0x83);
+    LCD_WriteData(0x69);
+
+    /* Set Power */
+    LCD_WriteCmd(0xB1);
+    LCD_WriteData(0x85);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x34);
+    LCD_WriteData(0x0A);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x0F);
+    LCD_WriteData(0x0F);
+    LCD_WriteData(0x2A);
+    LCD_WriteData(0x32);
+    LCD_WriteData(0x3F);
+    LCD_WriteData(0x3F);
+    LCD_WriteData(0x01);
+    LCD_WriteData(0x23);
+    LCD_WriteData(0x01);
+    LCD_WriteData(0xE6);
+    LCD_WriteData(0xE6);
+    LCD_WriteData(0xE6);
+    LCD_WriteData(0xE6);
+    LCD_WriteData(0xE6);
+
+    /* Set Display 480x800 */
+    LCD_WriteCmd(0xB2);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x20);
+    LCD_WriteData(0x0A);
+    LCD_WriteData(0x0A);
+    LCD_WriteData(0x70);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0xFF);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x03);
+    LCD_WriteData(0x03);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x01);
+
+    /* Set Display */
+    LCD_WriteCmd(0xB4);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x18);
+    LCD_WriteData(0x80);
+    LCD_WriteData(0x10);
+    LCD_WriteData(0x01);
+
+    /* Set VCOM */
+    LCD_WriteCmd(0xB6);
+    LCD_WriteData(0x2C);
+    LCD_WriteData(0x2C);
+
+    /* Set GIP */
+    LCD_WriteCmd(0xD5);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x05);
+    LCD_WriteData(0x03);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x01);
+    LCD_WriteData(0x09);
+    LCD_WriteData(0x10);
+    LCD_WriteData(0x80);
+    LCD_WriteData(0x37);
+    LCD_WriteData(0x37);
+    LCD_WriteData(0x20);
+    LCD_WriteData(0x31);
+    LCD_WriteData(0x46);
+    LCD_WriteData(0x8A);
+    LCD_WriteData(0x57);
+    LCD_WriteData(0x9B);
+    LCD_WriteData(0x20);
+    LCD_WriteData(0x31);
+    LCD_WriteData(0x46);
+    LCD_WriteData(0x8A);
+    LCD_WriteData(0x57);
+    LCD_WriteData(0x9B);
+    LCD_WriteData(0x07);
+    LCD_WriteData(0x0F);
+    LCD_WriteData(0x02);
+    LCD_WriteData(0x00);
+
+    /* Set GAMMA */
+    LCD_WriteCmd(0xE0);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x08);
+    LCD_WriteData(0x0D);
+    LCD_WriteData(0x2D);
+    LCD_WriteData(0x34);
+    LCD_WriteData(0x3F);
+    LCD_WriteData(0x19);
+    LCD_WriteData(0x38);
+    LCD_WriteData(0x09);
+    LCD_WriteData(0x0E);
+    LCD_WriteData(0x0E);
+    LCD_WriteData(0x12);
+    LCD_WriteData(0x14);
+    LCD_WriteData(0x12);
+    LCD_WriteData(0x14);
+    LCD_WriteData(0x13);
+    LCD_WriteData(0x19);
+    LCD_WriteData(0x00);
+    LCD_WriteData(0x08);
+    LCD_WriteData(0x0D);
+    LCD_WriteData(0x2D);
+    LCD_WriteData(0x34);
+    LCD_WriteData(0x3F);
+    LCD_WriteData(0x19);
+    LCD_WriteData(0x38);
+    LCD_WriteData(0x09);
+    LCD_WriteData(0x0E);
+    LCD_WriteData(0x0E);
+    LCD_WriteData(0x12);
+    LCD_WriteData(0x14);
+    LCD_WriteData(0x12);
+    LCD_WriteData(0x14);
+    LCD_WriteData(0x13);
+    LCD_WriteData(0x19);
+
+    /* Set DGC */
+    LCD_WriteCmd(0xC1);
+    LCD_WriteData(0x01);
+    /* R-Gamma */
+    LCD_WriteData(0x02);
+    LCD_WriteData(0x08);
+    LCD_WriteData(0x12);
+    LCD_WriteData(0x1A);
+    LCD_WriteData(0x22);
+    LCD_WriteData(0x2A);
+    LCD_WriteData(0x31);
+    LCD_WriteData(0x36);
+    LCD_WriteData(0x3F);
+    LCD_WriteData(0x48);
+    LCD_WriteData(0x51);
+    LCD_WriteData(0x58);
+    LCD_WriteData(0x60);
+    LCD_WriteData(0x68);
+    LCD_WriteData(0x70);
+    LCD_WriteData(0x78);
+    LCD_WriteData(0x80);
+    LCD_WriteData(0x88);
+    LCD_WriteData(0x90);
+    LCD_WriteData(0x98);
+    LCD_WriteData(0xA0);
+    LCD_WriteData(0xA7);
+    LCD_WriteData(0xAF);
+    LCD_WriteData(0xB6);
+    LCD_WriteData(0xBE);
+    LCD_WriteData(0xC7);
+    LCD_WriteData(0xCE);
+    LCD_WriteData(0xD6);
+    LCD_WriteData(0xDE);
+    LCD_WriteData(0xE6);
+    LCD_WriteData(0xEF);
+    LCD_WriteData(0xF5);
+    LCD_WriteData(0xFB);
+    LCD_WriteData(0xFC);
+    LCD_WriteData(0xFE);
+    LCD_WriteData(0x8C);
+    LCD_WriteData(0xA4);
+    LCD_WriteData(0x19);
+    LCD_WriteData(0xEC);
+    LCD_WriteData(0x1B);
+    LCD_WriteData(0x4C);
+    LCD_WriteData(0x40);
+    /* G-Gamma */
+    LCD_WriteData(0x02);
+    LCD_WriteData(0x08);
+    LCD_WriteData(0x12);
+    LCD_WriteData(0x1A);
+    LCD_WriteData(0x22);
+    LCD_WriteData(0x2A);
+    LCD_WriteData(0x31);
+    LCD_WriteData(0x36);
+    LCD_WriteData(0x3F);
+    LCD_WriteData(0x48);
+    LCD_WriteData(0x51);
+    LCD_WriteData(0x58);
+    LCD_WriteData(0x60);
+    LCD_WriteData(0x68);
+    LCD_WriteData(0x70);
+    LCD_WriteData(0x78);
+    LCD_WriteData(0x80);
+    LCD_WriteData(0x88);
+    LCD_WriteData(0x90);
+    LCD_WriteData(0x98);
+    LCD_WriteData(0xA0);
+    LCD_WriteData(0xA7);
+    LCD_WriteData(0xAF);
+    LCD_WriteData(0xB6);
+    LCD_WriteData(0xBE);
+    LCD_WriteData(0xC7);
+    LCD_WriteData(0xCE);
+    LCD_WriteData(0xD6);
+    LCD_WriteData(0xDE);
+    LCD_WriteData(0xE6);
+    LCD_WriteData(0xEF);
+    LCD_WriteData(0xF5);
+    LCD_WriteData(0xFB);
+    LCD_WriteData(0xFC);
+    LCD_WriteData(0xFE);
+    LCD_WriteData(0x8C);
+    LCD_WriteData(0xA4);
+    LCD_WriteData(0x19);
+    LCD_WriteData(0xEC);
+    LCD_WriteData(0x1B);
+    LCD_WriteData(0x4C);
+    LCD_WriteData(0x40);
+    /* B-Gamma */
+    LCD_WriteData(0x02);
+    LCD_WriteData(0x08);
+    LCD_WriteData(0x12);
+    LCD_WriteData(0x1A);
+    LCD_WriteData(0x22);
+    LCD_WriteData(0x2A);
+    LCD_WriteData(0x31);
+    LCD_WriteData(0x36);
+    LCD_WriteData(0x3F);
+    LCD_WriteData(0x48);
+    LCD_WriteData(0x51);
+    LCD_WriteData(0x58);
+    LCD_WriteData(0x60);
+    LCD_WriteData(0x68);
+    LCD_WriteData(0x70);
+    LCD_WriteData(0x78);
+    LCD_WriteData(0x80);
+    LCD_WriteData(0x88);
+    LCD_WriteData(0x90);
+    LCD_WriteData(0x98);
+    LCD_WriteData(0xA0);
+    LCD_WriteData(0xA7);
+    LCD_WriteData(0xAF);
+    LCD_WriteData(0xB6);
+    LCD_WriteData(0xBE);
+    LCD_WriteData(0xC7);
+    LCD_WriteData(0xCE);
+    LCD_WriteData(0xD6);
+    LCD_WriteData(0xDE);
+    LCD_WriteData(0xE6);
+    LCD_WriteData(0xEF);
+    LCD_WriteData(0xF5);
+    LCD_WriteData(0xFB);
+    LCD_WriteData(0xFC);
+    LCD_WriteData(0xFE);
+    LCD_WriteData(0x8C);
+    LCD_WriteData(0xA4);
+    LCD_WriteData(0x19);
+    LCD_WriteData(0xEC);
+    LCD_WriteData(0x1B);
+    LCD_WriteData(0x4C);
+    LCD_WriteData(0x40);
+
+    /* Set COLMOD - 16-bit initially */
     LCD_WriteCmd(0x3A);
     LCD_WriteData(0x55);
 
-    /* Memory access control - set orientation */
-    LCD_WriteCmd(0x36);
-    LCD_WriteData(0x00);  /* Normal orientation */
+    /* Sleep Out */
+    LCD_WriteCmd(0x11);
+    lcd_delay(120000);
 
-    /* Column address set */
-    LCD_WriteCmd(0x2A);
-    LCD_WriteData(0x00);
-    LCD_WriteData(0x00);
-    LCD_WriteData((LCD_WIDTH - 1) >> 8);
-    LCD_WriteData((LCD_WIDTH - 1) & 0xFF);
-
-    /* Row address set */
-    LCD_WriteCmd(0x2B);
-    LCD_WriteData(0x00);
-    LCD_WriteData(0x00);
-    LCD_WriteData((LCD_HEIGHT - 1) >> 8);
-    LCD_WriteData((LCD_HEIGHT - 1) & 0xFF);
-
-    /* Display on */
+    /* Display On */
     LCD_WriteCmd(0x29);
-    lcd_delay(10000);
+    lcd_delay(100000);
+
+    /* Set pixel format to 24-bit for TK80 */
+    LCD_WriteCmd(0x3A);
+    LCD_WriteData(0x77);
+
+    /* Set memory access control - landscape mode, BGR */
+    LCD_WriteCmd(0x36);
+    LCD_WriteData(0x60);
 
     /* Clear screen to black */
     LCD_Clear(COLOR_BLACK);
@@ -351,41 +738,64 @@ void LCD_SetWindow(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
 /* Clear the screen with a color */
 void LCD_Clear(uint16_t color)
 {
-    uint32_t i;
     uint32_t total = (uint32_t)LCD_WIDTH * LCD_HEIGHT;
+    uint32_t color32;
+
+    /* Convert RGB565 to RGB888 for TK80 24-bit mode */
+    uint8_t r = ((color >> 11) & 0x1F) << 3;
+    uint8_t g = ((color >> 5) & 0x3F) << 2;
+    uint8_t b = (color & 0x1F) << 3;
+    color32 = (r << 16) | (g << 8) | b;
 
     LCD_SetWindow(0, 0, LCD_WIDTH - 1, LCD_HEIGHT - 1);
 
-    for (i = 0; i < total; i++) {
-        LCD_WriteData(color);
-    }
+    /* Use TK80 hardware fill mode */
+    TK80->CFGR3 = total;
+    TK80->DINR = color32;
+    while (TK80->SR & 0x10000);
 }
 
 /* Draw a single pixel */
 void LCD_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
 {
+    uint32_t color32;
+
     if (x >= LCD_WIDTH || y >= LCD_HEIGHT) return;
 
+    /* Convert RGB565 to RGB888 */
+    uint8_t r = ((color >> 11) & 0x1F) << 3;
+    uint8_t g = ((color >> 5) & 0x3F) << 2;
+    uint8_t b = (color & 0x1F) << 3;
+    color32 = (r << 16) | (g << 8) | b;
+
     LCD_SetWindow(x, y, x, y);
-    LCD_WriteData(color);
+    TK80->DINR = color32;
+    while (TK80->SR & 0x10000);
 }
 
 /* Fill a rectangle */
 void LCD_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
 {
-    uint32_t i;
     uint32_t total;
+    uint32_t color32;
 
     if (x >= LCD_WIDTH || y >= LCD_HEIGHT) return;
     if (x + w > LCD_WIDTH) w = LCD_WIDTH - x;
     if (y + h > LCD_HEIGHT) h = LCD_HEIGHT - y;
 
+    /* Convert RGB565 to RGB888 */
+    uint8_t r = ((color >> 11) & 0x1F) << 3;
+    uint8_t g = ((color >> 5) & 0x3F) << 2;
+    uint8_t b = (color & 0x1F) << 3;
+    color32 = (r << 16) | (g << 8) | b;
+
     LCD_SetWindow(x, y, x + w - 1, y + h - 1);
 
     total = (uint32_t)w * h;
-    for (i = 0; i < total; i++) {
-        LCD_WriteData(color);
-    }
+    /* Use TK80 hardware fill mode */
+    TK80->CFGR3 = total;
+    TK80->DINR = color32;
+    while (TK80->SR & 0x10000);
 }
 
 /* Draw a character at position (x, y) */
@@ -394,6 +804,11 @@ uint8_t LCD_DrawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg)
     uint8_t i, j;
     uint8_t byte;
     const uint8_t *glyph;
+    uint32_t fg32, bg32;
+
+    /* Convert colors to RGB888 */
+    fg32 = (((fg >> 11) & 0x1F) << 19) | (((fg >> 5) & 0x3F) << 10) | ((fg & 0x1F) << 3);
+    bg32 = (((bg >> 11) & 0x1F) << 19) | (((bg >> 5) & 0x3F) << 10) | ((bg & 0x1F) << 3);
 
     /* Handle characters outside our font range */
     if (c < 32 || c > 126) {
@@ -402,13 +817,16 @@ uint8_t LCD_DrawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg)
 
     glyph = font8x16[c - 32];
 
+    /* Draw character using block write for speed */
+    LCD_SetWindow(x, y, x + 7, y + 15);
+
     for (j = 0; j < 16; j++) {
         byte = glyph[j];
         for (i = 0; i < 8; i++) {
             if (byte & (0x80 >> i)) {
-                LCD_DrawPixel(x + i, y + j, fg);
+                TK80->DINR = fg32;
             } else {
-                LCD_DrawPixel(x + i, y + j, bg);
+                TK80->DINR = bg32;
             }
         }
     }
@@ -466,45 +884,59 @@ void LCD_DrawStringLarge(uint16_t x, uint16_t y, const char *str, uint16_t fg, u
     }
 }
 
+/* Draw a single clock digit using 7-segment style */
+uint8_t LCD_DrawClockDigit(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg)
+{
+    if (c >= '0' && c <= '9') {
+        draw_7seg_digit(x, y, c - '0', fg, bg);
+        return SEG_DIGIT_WIDTH;
+    } else if (c == ':') {
+        draw_colon(x, y, fg, bg);
+        return SEG_COLON_WIDTH;
+    } else {
+        /* Unknown character - draw space */
+        LCD_FillRect(x, y, SEG_DIGIT_WIDTH, SEG_DIGIT_HEIGHT, bg);
+        return SEG_DIGIT_WIDTH;
+    }
+}
+
+/* Draw a clock time string using 7-segment digits */
+void LCD_DrawClockTime(uint16_t x, uint16_t y, const char *str, uint16_t fg, uint16_t bg)
+{
+    while (*str) {
+        x += LCD_DrawClockDigit(x, y, *str, fg, bg);
+        x += 4;  /* Small gap between characters */
+        str++;
+    }
+}
+
 /*
  * Backlight Control
- *
- * The backlight is controlled via PD8, which drives the enable pin
- * of the MP3302 boost converter that powers the LCD backlight LEDs.
- *
- * PD8 high = backlight on
- * PD8 low  = backlight off
+ * PD8 controls the MP3302 boost converter enable
  */
 
-/* Initialize backlight GPIO (PD8 as output) */
 void LCD_BacklightInit(void)
 {
-    /* Enable GPIOD clock (bit 3 of AHB1ENR) */
+    /* GPIOD clock should already be enabled */
     RCC->AHB1ENR |= (1 << 3);
 
-    /* Configure PD8 as push-pull output, 50MHz */
-    /* CRH controls pins 8-15, pin 8 is bits [3:0] */
-    /* MODE=11 (50MHz), CNF=00 (push-pull) -> 0x03 */
-    GPIOD->CRH &= ~(0x0F << 0);  /* Clear bits [3:0] */
-    GPIOD->CRH |= (0x03 << 0);   /* Set output 50MHz push-pull */
+    /* Configure PD8 as push-pull output */
+    GPIOD->CRH &= ~(0x0F << 0);
+    GPIOD->CRH |= (0x02 << 0);
 
-    /* Turn backlight on by default */
     LCD_BacklightOn();
 }
 
-/* Turn backlight on */
 void LCD_BacklightOn(void)
 {
-    GPIOD->BSRR = (1 << 8);  /* Set PD8 high */
+    GPIOD->BSRR = (1 << 8);
 }
 
-/* Turn backlight off */
 void LCD_BacklightOff(void)
 {
-    GPIOD->BSRR = (1 << 24);  /* Set PD8 low (reset) */
+    GPIOD->BSRR = (1 << 24);
 }
 
-/* Set backlight state */
 void LCD_Backlight(uint8_t on)
 {
     if (on) {
@@ -514,88 +946,28 @@ void LCD_Backlight(uint8_t on)
     }
 }
 
-/*
- * PWM Brightness Control
- *
- * Uses TIM3 to generate a software PWM signal on PD8.
- * The timer interrupts at 100kHz (100 ticks per 1kHz PWM cycle).
- * Each interrupt, we compare a counter against the brightness level
- * and set/clear PD8 accordingly.
- *
- * PWM frequency: 1kHz (no visible flicker)
- * Resolution: 100 levels (0-100%)
- */
+/* PWM brightness control - simplified version */
+static volatile uint8_t pwm_brightness = 100;
 
-/* PWM state variables */
-static volatile uint8_t pwm_brightness = 100;  /* 0-100 */
-static volatile uint8_t pwm_counter = 0;
-
-/* TIM3 Interrupt Handler - called at 100kHz */
-void TIM3_IRQHandler(void)
-{
-    /* Clear update interrupt flag */
-    TIM3->SR &= ~(1 << 0);
-
-    /* Increment PWM counter (0-99) */
-    pwm_counter++;
-    if (pwm_counter >= 100) {
-        pwm_counter = 0;
-    }
-
-    /* Set PD8 based on brightness threshold */
-    if (pwm_counter < pwm_brightness) {
-        GPIOD->BSRR = (1 << 8);      /* PD8 high (on) */
-    } else {
-        GPIOD->BSRR = (1 << 24);     /* PD8 low (off) */
-    }
-}
-
-/* Initialize PWM brightness control */
 void LCD_BrightnessInit(void)
 {
-    /* Enable GPIOD clock */
-    RCC->AHB1ENR |= (1 << 3);
-
-    /* Configure PD8 as push-pull output */
-    GPIOD->CRH &= ~(0x0F << 0);
-    GPIOD->CRH |= (0x03 << 0);
-
-    /* Enable TIM3 clock (bit 1 of APB1ENR) */
-    RCC->APB1ENR |= (1 << 1);
-
-    /* Configure TIM3 for 100kHz interrupt rate */
-    /* Assuming 240MHz system clock, APB1 typically runs at clock/4 = 60MHz */
-    /* But timer clock is 2x APB1 when prescaler != 1, so 120MHz */
-    /* For 100kHz: 120MHz / 100kHz = 1200 */
-    /* Use prescaler=12-1=11, ARR=100-1=99 -> 120MHz/12/100 = 100kHz */
-    TIM3->PSC = 11;         /* Prescaler: divide by 12 */
-    TIM3->ARR = 99;         /* Auto-reload: count to 99 (100 ticks) */
-    TIM3->CNT = 0;          /* Clear counter */
-
-    /* Enable update interrupt */
-    TIM3->DIER |= (1 << 0); /* UIE: Update interrupt enable */
-
-    /* Enable TIM3 interrupt in NVIC (IRQ 29) */
-    NVIC_EnableIRQ(TIM3_IRQn);
-    NVIC_SetPriority(TIM3_IRQn, 2);  /* Medium priority */
-
-    /* Start timer */
-    TIM3->CR1 |= (1 << 0);  /* CEN: Counter enable */
-
-    /* Set initial brightness to full */
+    LCD_BacklightInit();
     pwm_brightness = 100;
 }
 
-/* Set backlight brightness (0-100) */
 void LCD_SetBrightness(uint8_t level)
 {
-    if (level > 100) {
-        level = 100;
-    }
+    if (level > 100) level = 100;
     pwm_brightness = level;
+
+    /* Simple on/off for now */
+    if (level > 0) {
+        LCD_BacklightOn();
+    } else {
+        LCD_BacklightOff();
+    }
 }
 
-/* Get current brightness level */
 uint8_t LCD_GetBrightness(void)
 {
     return pwm_brightness;

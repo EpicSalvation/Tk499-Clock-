@@ -10,9 +10,9 @@
 
 #include <stdint.h>
 
-/* LCD Dimensions (4.3" display is typically 480x272 or 800x480) */
-#define LCD_WIDTH   480
-#define LCD_HEIGHT  272
+/* LCD Dimensions - TK043F1168 is 800x480 in landscape mode */
+#define LCD_WIDTH   800
+#define LCD_HEIGHT  480
 
 /* Common 16-bit RGB565 Colors */
 #define COLOR_BLACK     0x0000
@@ -26,12 +26,8 @@
 #define COLOR_GRAY      0x8410
 #define COLOR_ORANGE    0xFD20
 
-/* LCD FSMC Interface Addresses */
-/* The LCD is connected via FSMC Bank 1, typically at address 0x60000000 */
-/* Command/Data selection is done via address line (usually A16 or A18) */
-#define LCD_BASE        ((uint32_t)0x60000000)
-#define LCD_CMD         (*(volatile uint16_t *)(LCD_BASE))
-#define LCD_DATA        (*(volatile uint16_t *)(LCD_BASE + (1 << 19)))  /* A18 for RS */
+/* LCD is connected via TK80 parallel interface peripheral */
+/* See tkm32f499.h for TK80 register definitions */
 
 /* Function Prototypes */
 
@@ -80,6 +76,20 @@ uint8_t LCD_DrawCharLarge(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t 
  * Draw a string with scaling
  */
 void LCD_DrawStringLarge(uint16_t x, uint16_t y, const char *str, uint16_t fg, uint16_t bg, uint8_t scale);
+
+/**
+ * Draw a single clock digit (48x64 pixels)
+ * Supports '0'-'9' and ':'
+ * @return width of character drawn (48 for digits, 24 for colon)
+ */
+uint8_t LCD_DrawClockDigit(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg);
+
+/**
+ * Draw a clock time string using the large 48x64 font
+ * Supports digits 0-9 and colon only
+ * Example: LCD_DrawClockTime(x, y, "12:00:00", COLOR_GREEN, COLOR_BLACK);
+ */
+void LCD_DrawClockTime(uint16_t x, uint16_t y, const char *str, uint16_t fg, uint16_t bg);
 
 /**
  * Write a command to the LCD

@@ -24,6 +24,7 @@ Tk499-Clock-/
 │   ├── Bootloader.bin      # For board recovery
 │   └── *.pdf               # Documentation
 ├── LESSONS_LEARNED.md      # Technical notes and gotchas
+├── LCD_RENDERING.md        # LCD graphics programming guide
 ├── Makefile                # Build configuration
 └── README.md               # This file
 ```
@@ -114,10 +115,11 @@ If the board stops working (no "TK499_V2" drive appears):
 ## Application Descriptions
 
 ### Clock Application
-Displays text and a placeholder time on the 4.3" LCD:
-- Title: "TK499 Clock"
-- Placeholder time display: "12:00:00"
-- Status messages showing LCD is working
+Displays a clock interface on the 4.3" LCD (800x480, 24-bit color):
+- Blue header bar with title "Clock Demo"
+- Large centered time display "12:00:00" (6x scaled font)
+- Orange footer bar with status info
+- Decorative separator lines
 - LED blinks slowly to indicate the program is running
 
 ### LED Blink Test
@@ -141,6 +143,8 @@ This chip is unusual - see `LESSONS_LEARNED.md` for details:
 - Code executes from **SDRAM** (0x70020000), not internal flash
 - Vector table must be **remapped** to internal SRAM at startup
 - GPIO uses **STM32F1-style** registers (CRL/CRH), not STM32F4-style
+- **Extended GPIO**: Ports have 24 pins (0-23), not 16 - requires special registers for pins 16-23
+- LCD uses **TK80** peripheral with 24-bit RGB888 color (see `LCD_RENDERING.md`)
 - Two-stage bootloader: ROM bootloader + secondary bootloader in SPI flash
 
 ## Troubleshooting

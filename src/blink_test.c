@@ -14,9 +14,9 @@
 #define SCB_VTOR    (*(volatile uint32_t *)0xE000ED08)
 #define NVIC_ICER   ((volatile uint32_t *)0xE000E180)
 
-/* RCC registers */
+/* RCC registers - TKM32F499 specific offsets! */
 #define RCC_BASE    0x40023800
-#define RCC_AHB1ENR (*(volatile uint32_t *)(RCC_BASE + 0x30))
+#define RCC_AHB1ENR (*(volatile uint32_t *)(RCC_BASE + 0x20))
 
 /* GPIOA registers (for LED on PA8) */
 #define GPIOA_BASE  0x40020000

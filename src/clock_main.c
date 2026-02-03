@@ -51,25 +51,30 @@ static void delay(volatile uint32_t count)
 /*
  * Layout constants
  *
- * Screen: 480 x 272 pixels
+ * Screen: 800 x 480 pixels
  * Font: 8x16 pixels (width x height)
  */
-#define BAR_HEIGHT      24      /* Height of top/bottom colored bars */
-#define BAR_TEXT_Y      4       /* Y offset for text within bars (centers 16px text in 24px bar) */
-#define LINE_THICKNESS  2       /* Thickness of separator lines */
-#define TIME_SCALE      4       /* Scale factor for time display */
+#define BAR_HEIGHT      32      /* Height of top/bottom colored bars */
+#define BAR_TEXT_Y      8       /* Y offset for text within bars (centers 16px text in 32px bar) */
+#define LINE_THICKNESS  3       /* Thickness of separator lines */
+
+/*
+ * Time display using scaled 8x16 font
+ * Scale factor 6 = 48x96 pixels per character
+ */
+#define TIME_SCALE      6       /* Scale factor for time display */
 #define TIME_CHARS      8       /* "12:00:00" = 8 characters */
 
 /* Calculate centered time position */
-#define TIME_WIDTH      (TIME_CHARS * 8 * TIME_SCALE)   /* 8 chars * 8px * scale = 256 */
-#define TIME_HEIGHT     (16 * TIME_SCALE)               /* 16px * scale = 64 */
-#define TIME_X          ((LCD_WIDTH - TIME_WIDTH) / 2)  /* (480 - 256) / 2 = 112 */
-#define TIME_Y          ((LCD_HEIGHT - TIME_HEIGHT) / 2) /* (272 - 64) / 2 = 104 */
+#define TIME_WIDTH      (TIME_CHARS * 8 * TIME_SCALE)   /* 8 chars * 8px * 6 = 384 */
+#define TIME_HEIGHT     (16 * TIME_SCALE)               /* 16px * 6 = 96 */
+#define TIME_X          ((LCD_WIDTH - TIME_WIDTH) / 2)  /* (800 - 384) / 2 = 208 */
+#define TIME_Y          ((LCD_HEIGHT - TIME_HEIGHT) / 2) /* (480 - 96) / 2 = 192 */
 
 /* Line positions (above and below centered time) */
-#define LINE_ABOVE_Y    (TIME_Y - 10)
-#define LINE_BELOW_Y    (TIME_Y + TIME_HEIGHT + 6)
-#define LINE_MARGIN     60      /* Horizontal margin for lines */
+#define LINE_ABOVE_Y    (TIME_Y - 16)
+#define LINE_BELOW_Y    (TIME_Y + TIME_HEIGHT + 12)
+#define LINE_MARGIN     120     /* Horizontal margin for lines */
 
 /* Helper to calculate string width */
 static uint16_t string_width(const char *str, uint8_t scale)
@@ -88,8 +93,21 @@ int main(void)
     RCC->AHB1ENR |= (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
     delay(1000);
 
+    /* Configure PA8 as output for LED - do this early for debugging */
+    GPIOA->CRH &= ~(0x0F << 0);
+    GPIOA->CRH |= (0x03 << 0);
+
+    /* Debug: 2 quick blinks to show we got this far */
+    GPIOA->BSRR = (1 << 8); delay(500000); GPIOA->BSRR = (1 << 24); delay(500000);
+    GPIOA->BSRR = (1 << 8); delay(500000); GPIOA->BSRR = (1 << 24); delay(500000);
+
     /* Initialize the LCD */
     LCD_Init();
+
+    /* Debug: 3 quick blinks to show LCD_Init completed */
+    GPIOA->BSRR = (1 << 8); delay(500000); GPIOA->BSRR = (1 << 24); delay(500000);
+    GPIOA->BSRR = (1 << 8); delay(500000); GPIOA->BSRR = (1 << 24); delay(500000);
+    GPIOA->BSRR = (1 << 8); delay(500000); GPIOA->BSRR = (1 << 24); delay(500000);
 
     /* Clear screen to black background */
     LCD_Clear(COLOR_BLACK);
@@ -141,7 +159,7 @@ int main(void)
 
     /*
      * Draw the centered time display
-     * "12:00:00" at 4x scale = 256x64 pixels, centered on screen
+     * Using scaled 8x16 font at 6x scale = 48x96 pixels per character
      */
     LCD_DrawStringLarge(TIME_X, TIME_Y, "12:00:00", COLOR_GREEN, COLOR_BLACK, TIME_SCALE);
 
@@ -149,10 +167,6 @@ int main(void)
      * Draw horizontal line below the time
      */
     LCD_FillRect(LINE_MARGIN, LINE_BELOW_Y, LCD_WIDTH - (LINE_MARGIN * 2), LINE_THICKNESS, COLOR_WHITE);
-
-    /* Configure PA8 as output for LED */
-    GPIOA->CRH &= ~(0x0F << 0);
-    GPIOA->CRH |= (0x03 << 0);
 
     /* Main loop - blink LED slowly to show we're alive */
     while (1) {
