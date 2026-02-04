@@ -232,8 +232,34 @@ Check firmware version with `AT+GMR`. The SmartBoard may ship with older firmwar
 | SSL/TLS (HTTPS) | v2.0.0+ |
 
 If `AT+CIPSNTPCFG` returns `ERROR`, you have older firmware. Options:
-1. Update firmware (requires USB-serial adapter to ESP8266)
+1. Update firmware (see "Firmware Update" section below)
 2. Use HTTP-based time sync from plain HTTP server
+
+## Firmware Update (Future Reference)
+
+The ESP8266 is soldered to the board but can potentially be updated using the TKM32F499 as a serial passthrough:
+
+**Hardware connections for flashing:**
+| Signal | TKM32F499 Pin | ESP8266 Pin |
+|--------|---------------|-------------|
+| TX     | PA2 (UART2_TX) | RXD |
+| RX     | PA3 (UART2_RX) | TXD |
+| RST    | PD0           | RST |
+| CH_PD  | PD1           | CH_PD |
+| GPIO0  | PB15          | GPIO0 |
+
+**To enter ESP8266 bootloader mode:**
+1. Pull GPIO0 (PB15) LOW
+2. Pulse RST (PD0) LOW then HIGH
+3. ESP8266 boots into flash mode instead of normal operation
+
+**Approach:**
+1. Write a serial passthrough program for TKM32F499 (USB ↔ UART2 bridge)
+2. Control GPIO0 and RST to enter bootloader mode on startup
+3. Use `esptool.py` on PC to flash new AT firmware (e.g., v1.7.0+ for SNTP support)
+4. Flash clock firmware back to TKM32F499
+
+**Note:** This has not been tested yet. Requires understanding of USB serial capability on TKM32F499.
 
 ## Time Synchronization
 
