@@ -135,8 +135,21 @@ Key pins for the 4.3inch SmartBoard (different from evaluation board):
 
 ## Clock Speed
 
-The TKM32F499 runs at **240MHz**. Delay loops need large values:
-- `delay(5000000)` is roughly 1 second with a simple NOP loop
+**CRITICAL: The actual clock speed depends on how code is loaded!**
+
+- **When running via USB bootloader: 192MHz** (not 240MHz!)
+- The baud rate and delay calculations must use the correct clock
+
+Delay loop calibration for 192MHz:
+```c
+/* ~4 cycles per iteration, so 48000 iterations ≈ 1ms at 192MHz */
+static void delay_ms(uint32_t ms) {
+    volatile uint32_t count = ms * 48000;
+    while (count--) {
+        __asm volatile ("nop");
+    }
+}
+```
 
 ## TK80 LCD Controller
 
@@ -318,3 +331,183 @@ GPIOE_AFRH = 0xCCCCCCCC;  /* AF12 */
 GPIOE_CRH_EXT = 0xAAAAAAAA;
 GPIOE_AFRH_EXT = 0xCCCCCCCC;  /* AF12 */
 ```
+
+## UART Peripheral (NOT USART!)
+
+**CRITICAL: The TKM32F499 uses a custom UART peripheral, NOT STM32-style USART!**
+
+The register layout is completely different:
+
+### UART Register Structure
+
+```c
+typedef struct {
+    volatile uint32_t TDR;      /* 0x00: Transmit Data Register */
+    volatile uint32_t RDR;      /* 0x04: Receive Data Register */
+    volatile uint32_t CSR;      /* 0x08: Control/Status Register */
+    volatile uint32_t ISR;      /* 0x0C: Interrupt Status Register */
+    volatile uint32_t IER;      /* 0x10: Interrupt Enable Register */
+    volatile uint32_t ICR;      /* 0x14: Interrupt Clear Register */
+    volatile uint32_t GCR;      /* 0x18: General Control Register */
+    volatile uint32_t CCR;      /* 0x1C: Character Control Register */
+    volatile uint32_t BRR;      /* 0x20: Baud Rate Register */
+    volatile uint32_t FRABRG;   /* 0x24: Fractional Baud Rate Generator */
+} UART_TypeDef;
+```
+
+### UART Base Addresses (APB2 bus!)
+
+```c
+#define UART1_BASE  (0x40010000 + 0x0800)  /* 0x40010800 */
+#define UART2_BASE  (0x40010000 + 0x0C00)  /* 0x40010C00 */
+#define UART3_BASE  (0x40010000 + 0x1000)  /* 0x40011000 */
+```
+
+### UART Clock Enable (CRITICAL!)
+
+**The RCC bits for UART are NOT where you'd expect from STM32 documentation!**
+
+```c
+/* UART clock enable - APB2ENR bits 2-6 */
+RCC->APB2ENR |= (1 << 2);  /* UART1 */
+RCC->APB2ENR |= (1 << 3);  /* UART2 */
+RCC->APB2ENR |= (1 << 4);  /* UART3 */
+RCC->APB2ENR |= (1 << 5);  /* UART4 */
+RCC->APB2ENR |= (1 << 6);  /* UART5 */
+```
+
+**NOT** APB1ENR bit 17 as some documentation suggests!
+
+### Baud Rate Calculation
+
+```c
+/* Formula: BRR = SYS_CLK / baudrate / 16 */
+/*          FRABRG = (SYS_CLK / baudrate) % 16 */
+/* CRITICAL: Use 192MHz when running via bootloader, not 240MHz! */
+uint32_t sys_clk = 192000000;  /* 192MHz via bootloader */
+uint32_t div = sys_clk / baudrate;
+UART2->BRR = div / 16;
+UART2->FRABRG = div % 16;
+```
+
+**Symptom of wrong clock speed:** First byte received correctly, then garbage. This indicates baud rate drift.
+
+### CSR (Control/Status) Register Bits
+
+```c
+#define UART_CSR_TXC    (1 << 0)  /* TX complete/ready */
+#define UART_CSR_RXAVL  (1 << 1)  /* RX data available */
+```
+
+### GCR (General Control) Register Bits
+
+```c
+#define UART_GCR_UARTEN (1 << 0)  /* UART enable */
+#define UART_GCR_RXEN   (1 << 3)  /* RX enable */
+#define UART_GCR_TXEN   (1 << 4)  /* TX enable */
+```
+
+### GPIO Alternate Function for UART
+
+```c
+/* PA2/PA3 for UART2 - use AF7 */
+#define GPIO_AF_UART2345  0x07
+
+GPIOA->AFRL &= ~(0xFF << 8);        /* Clear PA2, PA3 AF */
+GPIOA->AFRL |= (0x07 << 8);         /* PA2 = AF7 */
+GPIOA->AFRL |= (0x07 << 12);        /* PA3 = AF7 */
+```
+
+### Basic UART Send/Receive
+
+```c
+/* Send byte */
+while (!(UART2->CSR & UART_CSR_TXC));  /* Wait for TX ready */
+UART2->TDR = byte;
+
+/* Receive byte */
+while (!(UART2->CSR & UART_CSR_RXAVL)); /* Wait for RX data */
+uint8_t data = UART2->RDR;
+```
+
+## ESP8266 WiFi Module
+
+The 4.3" SmartBoard has an onboard ESP8266 module (ESP8266MOD).
+
+### Hardware Connections
+
+| Function | TKM32F499 Pin | Notes |
+|----------|---------------|-------|
+| UART TX  | PA2           | Connect to ESP RX |
+| UART RX  | PA3           | Connect to ESP TX |
+| RST      | PD0           | Reset control |
+| CH_PD    | PD1           | Chip enable |
+
+**Note:** The reference code uses PD0/PD1, not PB14/PB15 as some schematics suggest!
+
+### ESP8266 Initialization Sequence
+
+```c
+int ESP_Init(void)
+{
+    /* 1. Enable GPIOD clock */
+    RCC->AHB1ENR |= (1 << 3);
+
+    /* 2. Configure PD0 (RST) and PD1 (CH_PD) as outputs */
+    GPIOD->CRL &= ~(0xFF << 0);
+    GPIOD->CRL |= (0x33 << 0);
+
+    /* 3. Set CH_PD high (enable), RST high (not in reset) */
+    GPIOD->BSRR = (1 << 1) | (1 << 0);
+
+    /* 4. Initialize UART2 at 115200 */
+    UART2_Init(115200);
+
+    /* 5. Reset ESP8266: pull RST low, wait, release */
+    GPIOD->BSRR = (1 << 16);  /* PD0 low */
+    delay_ms(100);
+    GPIOD->BSRR = (1 << 0);   /* PD0 high */
+
+    /* 6. Wait for boot (3-4 seconds!) */
+    delay_ms(4000);
+
+    /* 7. Clear any boot messages */
+    ESP_ClearRxBuffer();
+
+    /* 8. Test with AT command (retry several times) */
+    for (int i = 0; i < 10; i++) {
+        if (ESP_Test() == ESP_OK) {
+            ESP_SendCommand("ATE0", NULL, 0, 1000);  /* Disable echo */
+            return ESP_OK;
+        }
+        delay_ms(1000);
+        ESP_ClearRxBuffer();
+    }
+    return ESP_ERROR;
+}
+```
+
+### ESP8266 Boot Sequence
+
+1. ESP8266 sends boot messages at **74880 baud**
+2. After boot, AT firmware runs at **115200 baud** (default)
+3. Reset pulse: PD0 low for 100-200ms, then high
+4. Wait **3-4 seconds** for boot to complete (critical!)
+
+### AT Firmware Version Limitations
+
+The SmartBoard's ESP8266 may have older AT firmware (e.g., **v1.3.0**).
+
+| Feature | Minimum Firmware |
+|---------|------------------|
+| Basic AT commands | Any |
+| WiFi connect (CWJAP) | Any |
+| TCP connections (CIPSTART) | Any |
+| **SNTP time sync (CIPSNTPCFG)** | **v1.7.0+** |
+| SSL/TLS connections | v2.0.0+ |
+
+**If SNTP commands return ERROR**, your firmware is too old. Options:
+1. Update ESP8266 firmware (requires serial connection to ESP)
+2. Use HTTP-based time sync via Date header (requires plain HTTP server)
+
+See `ESP8266_WIFI.md` for complete WiFi setup guide.

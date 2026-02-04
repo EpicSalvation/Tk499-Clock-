@@ -117,6 +117,11 @@ typedef enum IRQn {
 #define TIM3_BASE           (APB1PERIPH_BASE + 0x0400)
 #define TIM4_BASE           (APB1PERIPH_BASE + 0x0800)
 
+/* UART Base Addresses (TKM32F499 uses UART, not USART!) */
+#define UART1_BASE          (APB2PERIPH_BASE + 0x0800)
+#define UART2_BASE          (APB2PERIPH_BASE + 0x0C00)
+#define UART3_BASE          (APB2PERIPH_BASE + 0x1000)
+
 /* ============================================================ */
 /* GPIO Registers (TKM32F499 has EXTENDED GPIO with 24 pins!)    */
 /* ============================================================ */
@@ -204,6 +209,49 @@ typedef struct {
 } TIM_TypeDef;
 
 /* ============================================================ */
+/* UART Registers (TKM32F499 specific - NOT STM32 USART!)        */
+/* ============================================================ */
+typedef struct {
+    volatile uint32_t TDR;      /* 0x00: Transmit Data Register */
+    volatile uint32_t RDR;      /* 0x04: Receive Data Register */
+    volatile uint32_t CSR;      /* 0x08: Control/Status Register */
+    volatile uint32_t ISR;      /* 0x0C: Interrupt Status Register */
+    volatile uint32_t IER;      /* 0x10: Interrupt Enable Register */
+    volatile uint32_t ICR;      /* 0x14: Interrupt Clear Register */
+    volatile uint32_t GCR;      /* 0x18: General Control Register */
+    volatile uint32_t CCR;      /* 0x1C: Character Control Register */
+    volatile uint32_t BRR;      /* 0x20: Baud Rate Register */
+    volatile uint32_t FRABRG;   /* 0x24: Fractional Baud Rate Generator */
+} UART_TypeDef;
+
+/* UART CSR (Control/Status) register bits */
+#define UART_CSR_TXC        (1 << 0)    /* TX complete/empty, ready to send */
+#define UART_CSR_RXAVL      (1 << 1)    /* RX data available */
+#define UART_CSR_TXFULL     (1 << 2)    /* TX FIFO full */
+#define UART_CSR_TXEMPTY    (1 << 3)    /* TX FIFO empty */
+
+/* UART GCR (General Control) register bits */
+#define UART_GCR_UARTEN     (1 << 0)    /* UART enable */
+#define UART_GCR_DMAMODE    (1 << 1)    /* DMA mode */
+#define UART_GCR_AUTOFLOWEN (1 << 2)    /* Auto flow control enable */
+#define UART_GCR_RXEN       (1 << 3)    /* Receiver enable */
+#define UART_GCR_TXEN       (1 << 4)    /* Transmitter enable */
+
+/* UART CCR (Character Control) register bits */
+#define UART_CCR_PEN        (1 << 0)    /* Parity enable */
+#define UART_CCR_PSEL       (1 << 1)    /* Parity select (0=even, 1=odd) */
+#define UART_CCR_SPB        (1 << 2)    /* Stop bits (0=1 stop, 1=2 stop) */
+#define UART_CCR_BRK        (1 << 3)    /* Break */
+#define UART_CCR_CHAR_5BIT  (0 << 4)    /* 5-bit character */
+#define UART_CCR_CHAR_6BIT  (1 << 4)    /* 6-bit character */
+#define UART_CCR_CHAR_7BIT  (2 << 4)    /* 7-bit character */
+#define UART_CCR_CHAR_8BIT  (3 << 4)    /* 8-bit character */
+
+/* GPIO Alternate Function for UART */
+#define GPIO_AF_UART1       ((uint8_t)0x08)
+#define GPIO_AF_UART2345    ((uint8_t)0x07)
+
+/* ============================================================ */
 /* Peripheral Declarations                                       */
 /* ============================================================ */
 #define GPIOA   ((GPIO_TypeDef *)GPIOA_BASE)
@@ -217,6 +265,9 @@ typedef struct {
 #define TIM3    ((TIM_TypeDef *)TIM3_BASE)
 #define TIM4    ((TIM_TypeDef *)TIM4_BASE)
 #define TK80    ((TK80_TypeDef *)TK80_BASE)
+#define UART1   ((UART_TypeDef *)UART1_BASE)
+#define UART2   ((UART_TypeDef *)UART2_BASE)
+#define UART3   ((UART_TypeDef *)UART3_BASE)
 
 /* ============================================================ */
 /* GPIO Configuration Types (STM32F1-style)                      */
