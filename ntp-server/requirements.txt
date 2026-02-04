@@ -1,0 +1,6 @@
+# NTP Server Requirements
+# No external dependencies required - uses only Python standard library
+#
+# Optional dependencies for development/testing:
+# pytest>=7.0.0
+# pytest-cov>=4.0.0

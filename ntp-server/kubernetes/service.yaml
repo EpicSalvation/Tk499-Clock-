@@ -1,0 +1,45 @@
+# Service for NTP server
+# NTP uses UDP port 123
+
+---
+# ClusterIP service for internal cluster access
+apiVersion: v1
+kind: Service
+metadata:
+  name: ntp-server
+  namespace: ntp-server
+  labels:
+    app.kubernetes.io/name: ntp-server
+    app.kubernetes.io/component: time-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ntp-server
+  ports:
+    - name: ntp
+      port: 123
+      targetPort: 123
+      protocol: UDP
+
+---
+# NodePort service for access from devices on the local network
+# Use this if your IoT devices need to reach the NTP server
+apiVersion: v1
+kind: Service
+metadata:
+  name: ntp-server-nodeport
+  namespace: ntp-server
+  labels:
+    app.kubernetes.io/name: ntp-server
+    app.kubernetes.io/component: time-service
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: ntp-server
+  ports:
+    - name: ntp
+      port: 123
+      targetPort: 123
+      protocol: UDP
+      # NodePort will be assigned automatically (30000-32767)
+      # Or specify one explicitly: nodePort: 30123

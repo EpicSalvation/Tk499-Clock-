@@ -1,0 +1,21 @@
+# ConfigMap for NTP server configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ntp-server-config
+  namespace: ntp-server
+  labels:
+    app.kubernetes.io/name: ntp-server
+    app.kubernetes.io/component: time-service
+data:
+  # NTP server stratum level (1-15)
+  # Stratum 1 = directly connected to reference clock
+  # Stratum 2 = synced to stratum 1 server, etc.
+  NTP_STRATUM: "2"
+
+  # Reference identifier (4 characters max)
+  # Common values: LOCL (local), GPS, PPS, etc.
+  NTP_REFERENCE_ID: "LOCL"
+
+  # Logging level: DEBUG, INFO, WARNING, ERROR
+  NTP_LOG_LEVEL: "INFO"
