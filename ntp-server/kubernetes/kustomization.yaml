@@ -1,0 +1,22 @@
+# Kustomization for NTP server deployment
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: ntp-server
+
+namespace: ntp-server
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: tk499-clock
+  app.kubernetes.io/managed-by: kustomize
+
+images:
+  - name: ntp-server
+    newTag: latest
