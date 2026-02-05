@@ -140,7 +140,107 @@ Key pins for the 4.3inch SmartBoard (different from evaluation board):
 - **When running via USB bootloader: 192MHz** (not 240MHz!)
 - The baud rate and delay calculations must use the correct clock
 
-Delay loop calibration for 192MHz:
+### Using the HSE Crystal for Accurate Timing
+
+The TKM32F499 4.3" SmartBoard has a **12 MHz external crystal** connected to OSC_IN (pin 9) and OSC_OUT (pin 10). Using this crystal instead of the internal RC oscillator provides much more accurate timing.
+
+**Why this matters:**
+- Internal RC oscillator: ±1-2% accuracy, temperature-dependent drift
+- External crystal: ±20-50 ppm accuracy (~1-4 seconds/day drift)
+
+```c
+void SystemClock_ConfigHSE(void)
+{
+    /* Enable HSE oscillator */
+    RCC->CR |= RCC_CR_HSEON;
+
+    /* Wait for HSE ready */
+    while (!(RCC->CR & RCC_CR_HSERDY));
+
+    /* Configure PLL: 12 MHz HSE -> 192 MHz system clock
+     * PLLM=6, PLLN=192, PLLP=0 (div 2) -> 12/6 * 192 / 2 = 192 MHz */
+    RCC->PLLCFGR = (6 << 0)          /* PLLM */
+                 | (192 << 6)        /* PLLN */
+                 | (0 << 16)         /* PLLP */
+                 | RCC_PLLCFGR_PLLSRC_HSE;
+
+    /* Enable PLL and wait for lock */
+    RCC->CR |= RCC_CR_PLLON;
+    while (!(RCC->CR & RCC_CR_PLLRDY));
+
+    /* Switch to PLL */
+    RCC->CFGR = (RCC->CFGR & ~RCC_CFGR_SW) | RCC_CFGR_SW_PLL;
+    while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL);
+
+    SystemCoreClock = 192000000;
+}
+```
+
+### SysTick for Precise Timekeeping
+
+**CRITICAL: Software delay loops are NOT suitable for timekeeping!**
+
+Software NOP loops drift significantly due to:
+- Compiler optimization variations
+- CPU pipeline effects
+- Instruction cache behavior
+- Interrupts during the delay
+
+Use the ARM Cortex-M4 SysTick timer for accurate millisecond timing:
+
+```c
+static volatile uint32_t systick_ms = 0;
+
+void SysTick_Init(void)
+{
+    /* Configure for 1ms interrupts: reload = (clock / 1000) - 1 */
+    SysTick->LOAD = (SystemCoreClock / 1000) - 1;  /* 191999 at 192 MHz */
+    SysTick->VAL = 0;
+    SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk |
+                    SysTick_CTRL_TICKINT_Msk |
+                    SysTick_CTRL_ENABLE_Msk;
+}
+
+void SysTick_Handler(void)
+{
+    systick_ms++;
+}
+
+uint32_t SysTick_GetTick(void)
+{
+    return systick_ms;
+}
+
+void SysTick_DelayMs(uint32_t ms)
+{
+    uint32_t start = systick_ms;
+    while ((systick_ms - start) < ms);
+}
+```
+
+**For clock applications**, use tick-based timing instead of delays:
+
+```c
+/* BAD: Accumulates drift over time */
+while (1) {
+    delay_ms(1000);
+    seconds++;
+}
+
+/* GOOD: Hardware-based, no drift accumulation */
+uint32_t last_tick = SysTick_GetTick();
+while (1) {
+    if ((SysTick_GetTick() - last_tick) >= 1000) {
+        last_tick += 1000;  /* Add exactly 1000ms to prevent drift */
+        seconds++;
+    }
+}
+```
+
+### Legacy Software Delay (only for early init)
+
+Only use software delays during early initialization before SysTick is configured:
+
 ```c
 /* ~4 cycles per iteration, so 48000 iterations ≈ 1ms at 192MHz */
 static void delay_ms(uint32_t ms) {
@@ -509,5 +609,39 @@ The SmartBoard's ESP8266 may have older AT firmware (e.g., **v1.3.0**).
 **If SNTP commands return ERROR**, your firmware is too old. Options:
 1. Update ESP8266 firmware (requires serial connection to ESP)
 2. Use HTTP-based time sync via Date header (requires plain HTTP server)
+
+### UART Receive Timing (CRITICAL for Performance!)
+
+**A common mistake causes HTTP downloads to take 30-60 seconds instead of 1-2 seconds.**
+
+At 115200 baud, one byte takes ~87µs. The inter-character timeout should be short (5-10ms), not the full operation timeout for every byte.
+
+```c
+/* BAD: 100ms timeout per byte - catastrophically slow! */
+for (int i = 0; i < 700; i++) {
+    int b = UART2_ReceiveByteTimeout(100);  /* Each gap costs 100ms! */
+    if (b < 0) break;
+    buffer[i] = b;
+}
+
+/* GOOD: Short inter-character timeout after first byte */
+#define INTER_CHAR_TIMEOUT_MS  10
+
+int b = UART2_ReceiveByteTimeout(5000);  /* 5s for first byte (server latency) */
+if (b >= 0) buffer[total++] = b;
+
+int consecutive_timeouts = 0;
+while (total < 700 && consecutive_timeouts < 50) {  /* 500ms idle = end */
+    b = UART2_ReceiveByteTimeout(INTER_CHAR_TIMEOUT_MS);
+    if (b >= 0) {
+        buffer[total++] = b;
+        consecutive_timeouts = 0;
+    } else {
+        consecutive_timeouts++;
+    }
+}
+```
+
+**Also:** Don't add delays after reading a byte. If `RXAVL` is set, the byte is already in the buffer - read it immediately.
 
 See `ESP8266_WIFI.md` for complete WiFi setup guide.
