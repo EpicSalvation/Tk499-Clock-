@@ -324,6 +324,32 @@ typedef struct {
 #define RCC_AHBPeriph_GPIOE     ((uint32_t)0x00000010)
 #define RCC_AHBPeriph_GPIOF     ((uint32_t)0x00000020)
 
+/* RCC CR Register Bits (Clock Control) */
+#define RCC_CR_HSION            ((uint32_t)0x00000001)  /* Internal high-speed clock enable */
+#define RCC_CR_HSIRDY           ((uint32_t)0x00000002)  /* Internal high-speed clock ready */
+#define RCC_CR_HSEON            ((uint32_t)0x00010000)  /* External high-speed clock enable */
+#define RCC_CR_HSERDY           ((uint32_t)0x00020000)  /* External high-speed clock ready */
+#define RCC_CR_HSEBYP           ((uint32_t)0x00040000)  /* External high-speed clock bypass */
+#define RCC_CR_PLLON            ((uint32_t)0x01000000)  /* PLL enable */
+#define RCC_CR_PLLRDY           ((uint32_t)0x02000000)  /* PLL ready */
+
+/* RCC CFGR Register Bits (Clock Configuration) */
+#define RCC_CFGR_SW             ((uint32_t)0x00000003)  /* System clock switch mask */
+#define RCC_CFGR_SW_HSI         ((uint32_t)0x00000000)  /* HSI selected as system clock */
+#define RCC_CFGR_SW_HSE         ((uint32_t)0x00000001)  /* HSE selected as system clock */
+#define RCC_CFGR_SW_PLL         ((uint32_t)0x00000002)  /* PLL selected as system clock */
+#define RCC_CFGR_SWS            ((uint32_t)0x0000000C)  /* System clock switch status mask */
+#define RCC_CFGR_SWS_HSI        ((uint32_t)0x00000000)  /* HSI used as system clock */
+#define RCC_CFGR_SWS_HSE        ((uint32_t)0x00000004)  /* HSE used as system clock */
+#define RCC_CFGR_SWS_PLL        ((uint32_t)0x00000008)  /* PLL used as system clock */
+
+/* RCC PLLCFGR Register Bits (PLL Configuration) */
+#define RCC_PLLCFGR_PLLSRC_HSE  ((uint32_t)0x00400000)  /* HSE as PLL source */
+#define RCC_PLLCFGR_PLLSRC_HSI  ((uint32_t)0x00000000)  /* HSI as PLL source */
+
+/* HSE Crystal Frequency (12 MHz on this board) */
+#define HSE_VALUE               ((uint32_t)12000000)
+
 /* RCC AHB2 Peripheral Clock Enable */
 #define RCC_AHB2Periph_TK80     ((uint32_t)0x80000000)
 
@@ -338,6 +364,12 @@ void GPIO_SetBits(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin);
 void GPIO_ResetBits(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin);
 uint8_t GPIO_ReadOutputDataBit(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin);
 void RCC_AHBPeriphClockCmd(uint32_t RCC_AHBPeriph, int NewState);
+
+/* System Clock Functions */
+void SystemClock_ConfigHSE(void);   /* Configure HSE (12 MHz crystal) as system clock source */
+void SysTick_Init(void);            /* Initialize SysTick for 1ms ticks */
+uint32_t SysTick_GetTick(void);     /* Get current tick count (milliseconds) */
+void SysTick_DelayMs(uint32_t ms);  /* Delay for specified milliseconds */
 
 #define ENABLE  1
 #define DISABLE 0

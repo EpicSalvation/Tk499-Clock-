@@ -52,18 +52,12 @@ static void RemapVtorTable(void)
     }
 }
 
-/* Simple delay */
+/* Simple delay (used only during early init before SysTick is ready) */
 static void delay(volatile uint32_t count)
 {
     while (count--) {
         __asm volatile ("nop");
     }
-}
-
-/* Delay in milliseconds (approximate) */
-static void delay_ms(uint32_t ms)
-{
-    delay(ms * 24000);
 }
 
 /* ============================================================ */
@@ -124,7 +118,8 @@ int main(void)
 {
     ESP_Time_t ntp_time;
     int wifi_connected = 0;
-    uint32_t sync_counter = 0;
+    uint32_t last_second_tick = 0;
+    uint32_t last_sync_tick = 0;
 
     /* Local time keeping */
     uint8_t hours = 12, minutes = 0, seconds = 0;
@@ -132,9 +127,15 @@ int main(void)
     /* CRITICAL: Remap vector table first */
     RemapVtorTable();
 
+    /* Configure system clock to use 12 MHz HSE crystal for accurate timing */
+    SystemClock_ConfigHSE();
+
+    /* Initialize SysTick for precise 1ms timekeeping */
+    SysTick_Init();
+
     /* Enable GPIO clocks */
     RCC->AHB1ENR |= (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4);
-    delay(1000);
+    SysTick_DelayMs(1);
 
     /* Configure PA8 as output for LED */
     GPIOA->CRH &= ~(0x0F << 0);
@@ -177,18 +178,18 @@ int main(void)
 
     /* Initialize ESP8266 */
     update_status("Init WiFi...");
-    delay_ms(500);
+    SysTick_DelayMs(500);
 
     if (ESP_Init() == ESP_OK) {
         update_status("WiFi OK");
-        delay_ms(500);
+        SysTick_DelayMs(500);
 
         /* Connect to WiFi */
         update_status("Connecting...");
         if (ESP_ConnectWiFi(WIFI_SSID, WIFI_PASSWORD) == ESP_OK) {
             wifi_connected = 1;
             update_status("Connected!");
-            delay_ms(500);
+            SysTick_DelayMs(500);
 
             /* Show IP address before getting time */
             char ip_buf[20];
@@ -197,7 +198,7 @@ int main(void)
             } else {
                 update_status("No IP!");
             }
-            delay_ms(3000);  /* Show IP for 3 seconds */
+            SysTick_DelayMs(3000);  /* Show IP for 3 seconds */
 
             /* Get time from HTTP API */
             update_status("Getting time...");
@@ -217,45 +218,56 @@ int main(void)
         update_status("ESP8266 err");
     }
 
-    /* Main loop */
+    /* Record starting tick for time tracking */
+    last_second_tick = SysTick_GetTick();
+    last_sync_tick = last_second_tick;
+
+    /* Main loop - uses hardware SysTick for precise 1-second intervals */
     while (1) {
-        /* Toggle LED */
-        GPIOA->ODR ^= (1 << 8);
+        uint32_t current_tick = SysTick_GetTick();
 
-        /* Simple ~1 second delay */
-        delay_ms(1000);
+        /* Check if 1 second (1000ms) has elapsed using hardware timer */
+        if ((current_tick - last_second_tick) >= 1000) {
+            last_second_tick += 1000;  /* Add exactly 1000ms to prevent drift accumulation */
 
-        /* Increment time */
-        seconds++;
-        if (seconds >= 60) {
-            seconds = 0;
-            minutes++;
-            if (minutes >= 60) {
-                minutes = 0;
-                hours++;
-                if (hours >= 24) {
-                    hours = 0;
+            /* Toggle LED */
+            GPIOA->ODR ^= (1 << 8);
+
+            /* Increment time */
+            seconds++;
+            if (seconds >= 60) {
+                seconds = 0;
+                minutes++;
+                if (minutes >= 60) {
+                    minutes = 0;
+                    hours++;
+                    if (hours >= 24) {
+                        hours = 0;
+                    }
                 }
             }
+
+            /* Update display */
+            display_time(hours, minutes, seconds);
         }
 
-        /* Update display */
-        display_time(hours, minutes, seconds);
-
-        /* Re-sync with NTP every ~10 minutes if connected */
-        sync_counter++;
-        if (wifi_connected && sync_counter >= 600) {
-            sync_counter = 0;
+        /* Re-sync with NTP every ~10 minutes (600,000 ms) if connected */
+        if (wifi_connected && (current_tick - last_sync_tick) >= 600000) {
+            last_sync_tick = current_tick;
             update_status("NTP sync...");
             if (ESP_GetNTPTime(&ntp_time, TIMEZONE_OFFSET) == ESP_OK) {
                 hours = ntp_time.hours;
                 minutes = ntp_time.minutes;
                 seconds = ntp_time.seconds;
+                last_second_tick = SysTick_GetTick();  /* Reset second counter after sync */
                 update_status("Synced");
             } else {
                 update_status("Sync failed");
             }
         }
+
+        /* Small delay to prevent busy-spinning and reduce power consumption */
+        __asm volatile ("wfi");  /* Wait for interrupt - CPU sleeps until next SysTick */
     }
 
     return 0;
