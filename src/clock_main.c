@@ -136,6 +136,9 @@ static uint8_t manual_theme = 0;  /* Set to 1 when user manually toggles */
 /* Current theme colors (set by apply_theme) */
 static uint16_t theme_bg;
 static uint16_t theme_time;
+
+/* Track previous time string to avoid flicker (only redraw changed digits) */
+static char prev_time_str[12] = "";
 static uint16_t theme_date;
 static uint16_t theme_bar;
 static uint16_t theme_bartext;
@@ -144,6 +147,7 @@ static uint16_t theme_line;
 static void apply_theme(uint8_t night)
 {
     night_mode = night;
+    prev_time_str[0] = '\0';  /* Force full redraw of time */
     if (night) {
         theme_bg      = COLOR_NIGHT_BG;
         theme_time    = COLOR_NIGHT_TIME;
@@ -194,15 +198,30 @@ static void update_status(const char *msg)
     LCD_DrawString(4, STATUS_Y, msg, theme_bartext, theme_bar);
 }
 
-/* Display time string */
+/* Display time string - only updates digits that changed to prevent flicker */
 static void display_time(uint8_t hours, uint8_t minutes, uint8_t seconds)
 {
     char time_str[12];
     snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", hours, minutes, seconds);
 
-    /* Clear time area and redraw */
-    LCD_FillRect(TIME_X - 4, TIME_Y - 4, TIME_WIDTH + 8, TIME_HEIGHT + 8, theme_bg);
-    LCD_DrawStringLarge(TIME_X, TIME_Y, time_str, theme_time, theme_bg, TIME_SCALE);
+    /* If first draw or theme changed, draw everything */
+    if (prev_time_str[0] == '\0') {
+        LCD_DrawStringLarge(TIME_X, TIME_Y, time_str, theme_time, theme_bg, TIME_SCALE);
+    } else {
+        /* Only redraw characters that changed */
+        uint16_t char_width = 8 * TIME_SCALE;
+        for (int i = 0; time_str[i] != '\0'; i++) {
+            if (time_str[i] != prev_time_str[i]) {
+                uint16_t x = TIME_X + i * char_width;
+                /* Draw single character with background (overwrites old digit) */
+                char single[2] = { time_str[i], '\0' };
+                LCD_DrawStringLarge(x, TIME_Y, single, theme_time, theme_bg, TIME_SCALE);
+            }
+        }
+    }
+
+    /* Remember for next update */
+    strcpy(prev_time_str, time_str);
 }
 
 /* Calculate day of week (0=Sun, 1=Mon, ... 6=Sat) using Zeller-like formula */
