@@ -42,17 +42,19 @@ static void UART2_SendString(const char *str)
     }
 }
 
-/* Receive with timeout, returns -1 on timeout */
+/* Receive with timeout, returns -1 on timeout
+ * At 115200 baud, one byte takes ~87µs to transmit.
+ * Use short inter-character timeout for efficiency.
+ */
 static int UART2_ReceiveByteTimeout(uint32_t timeout_ms)
 {
+    /* Convert ms to loop iterations (~1µs per iteration at 192MHz) */
     uint32_t timeout = timeout_ms * 1000;
     while (timeout--) {
         if (UART2->CSR & UART_CSR_RXAVL) {
-            /* Small delay to ensure byte is fully received */
-            esp_delay(100);
-            return (uint8_t)UART2->RDR;
+            return (uint8_t)UART2->RDR;  /* Byte is ready, read immediately */
         }
-        esp_delay(24);  /* ~1us */
+        esp_delay(24);  /* ~1µs delay */
     }
     return -1;
 }
@@ -66,19 +68,28 @@ static void ESP_ClearRxBuffer(void)
     }
 }
 
-/* Read response until timeout or pattern found */
+/* Inter-character timeout (ms) - time to wait between bytes once data starts flowing
+ * At 115200 baud, bytes arrive every ~87µs, so 10ms is very generous */
+#define INTER_CHAR_TIMEOUT_MS  10
+
+/* Read response until timeout or pattern found
+ * Uses timeout_ms for initial wait, then short inter-character timeout */
 static int ESP_ReadResponse(char *buffer, uint16_t max_len, uint32_t timeout_ms, const char *end_pattern)
 {
     uint16_t idx = 0;
     int byte;
+    uint32_t current_timeout = timeout_ms;  /* Full timeout for first byte */
 
     while (idx < max_len - 1) {
-        byte = UART2_ReceiveByteTimeout(timeout_ms);
+        byte = UART2_ReceiveByteTimeout(current_timeout);
         if (byte < 0) {
             break;  /* Timeout */
         }
         buffer[idx++] = (char)byte;
         buffer[idx] = '\0';
+
+        /* After first byte, use short inter-character timeout */
+        current_timeout = INTER_CHAR_TIMEOUT_MS;
 
         /* Check for end pattern */
         if (end_pattern && strstr(buffer, end_pattern)) {
@@ -373,16 +384,31 @@ int ESP_GetNTPTime(ESP_Time_t *time, int8_t timezone_offset)
     memset(response, 0, sizeof(response));
     ESP_ReadResponse(response, 60, 10000, "SEND OK");
 
-    /* Read HTTP response - need ~644 bytes for headers + JSON body */
+    /* Read HTTP response - need ~644 bytes for headers + JSON body
+     * Use short inter-character timeout (10ms) for efficiency.
+     * At 115200 baud, 700 bytes takes ~60ms to transmit.
+     * Allow up to 5 seconds total for server response + transmission.
+     */
     memset(response, 0, sizeof(response));
     int total = 0;
     int b;
+    int consecutive_timeouts = 0;
+    const int MAX_CONSECUTIVE_TIMEOUTS = 50;  /* 50 * 10ms = 500ms of no data = end of response */
 
-    for (i = 0; i < 300 && total < 680; i++) {
-        b = UART2_ReceiveByteTimeout(100);
+    /* Wait for first byte with longer timeout (server may be slow) */
+    b = UART2_ReceiveByteTimeout(5000);
+    if (b >= 0) {
+        response[total++] = (char)b;
+    }
+
+    /* Read remaining bytes with short inter-character timeout */
+    while (total < 680 && consecutive_timeouts < MAX_CONSECUTIVE_TIMEOUTS) {
+        b = UART2_ReceiveByteTimeout(INTER_CHAR_TIMEOUT_MS);
         if (b >= 0) {
             response[total++] = (char)b;
-            i = 0;  /* Reset timeout when data arrives */
+            consecutive_timeouts = 0;  /* Reset timeout counter when data arrives */
+        } else {
+            consecutive_timeouts++;
         }
     }
     response[total] = '\0';

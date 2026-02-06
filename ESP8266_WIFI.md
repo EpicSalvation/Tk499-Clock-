@@ -176,14 +176,99 @@ int UART2_ReceiveByteTimeout(uint32_t timeout_ms)
     uint32_t timeout = timeout_ms * 1000;
     while (timeout--) {
         if (UART2->CSR & (1 << 1)) {  /* RX available */
-            return (uint8_t)UART2->RDR;
+            return (uint8_t)UART2->RDR;  /* Read immediately - no delay needed */
         }
-        /* Small delay (~1us at 240MHz) */
+        /* Small delay (~1us at 192MHz) */
         for (volatile int i = 0; i < 24; i++);
     }
     return -1;  /* Timeout */
 }
 ```
+
+## UART Receive Timing (CRITICAL for Performance!)
+
+**This is a common source of severe performance problems.** At 115200 baud, one byte takes ~87µs to transmit. The inter-character timeout should be short (5-10ms), not the full operation timeout.
+
+### The Problem: Per-Byte Timeout
+
+A naive implementation uses the same timeout for every byte:
+
+```c
+/* BAD: Uses full timeout for every byte - causes massive delays! */
+int ESP_ReadResponse(char *buffer, int max_len, int timeout_ms) {
+    for (int i = 0; i < max_len; i++) {
+        int byte = UART2_ReceiveByteTimeout(timeout_ms);  /* 100ms per byte! */
+        if (byte < 0) break;
+        buffer[i] = byte;
+    }
+}
+```
+
+**Impact:** Reading 700 bytes with network gaps can take 30-60 seconds instead of 1-2 seconds!
+
+### The Solution: Short Inter-Character Timeout
+
+Use the full timeout only for the first byte, then switch to a short inter-character timeout:
+
+```c
+#define INTER_CHAR_TIMEOUT_MS  10  /* 10ms between bytes is very generous */
+
+int ESP_ReadResponse(char *buffer, int max_len, int timeout_ms, const char *end_pattern) {
+    int idx = 0;
+    int current_timeout = timeout_ms;  /* Full timeout for first byte */
+
+    while (idx < max_len - 1) {
+        int byte = UART2_ReceiveByteTimeout(current_timeout);
+        if (byte < 0) break;
+        buffer[idx++] = byte;
+        buffer[idx] = '\0';
+
+        /* After first byte, use short inter-character timeout */
+        current_timeout = INTER_CHAR_TIMEOUT_MS;
+
+        if (end_pattern && strstr(buffer, end_pattern)) break;
+    }
+    return idx;
+}
+```
+
+### HTTP Response Reading
+
+For HTTP responses (like NTP time sync), use a similar approach:
+
+```c
+/* Wait for first byte with longer timeout (server may be slow) */
+int b = UART2_ReceiveByteTimeout(5000);  /* 5 second initial timeout */
+if (b >= 0) {
+    response[total++] = b;
+}
+
+/* Read remaining bytes with short inter-character timeout */
+int consecutive_timeouts = 0;
+while (total < 680 && consecutive_timeouts < 50) {  /* 50 * 10ms = 500ms idle = end */
+    b = UART2_ReceiveByteTimeout(INTER_CHAR_TIMEOUT_MS);
+    if (b >= 0) {
+        response[total++] = b;
+        consecutive_timeouts = 0;
+    } else {
+        consecutive_timeouts++;
+    }
+}
+```
+
+### Performance Comparison
+
+| Approach | Time to read 700 bytes |
+|----------|------------------------|
+| 100ms per-byte timeout | 30-60 seconds |
+| 10ms inter-character timeout | 1-2 seconds |
+| Theoretical minimum (115200 baud) | ~60ms |
+
+### Other UART Receive Tips
+
+1. **Don't add delays after reading a byte** - If `RXAVL` is set, the byte is already in the buffer
+2. **Use `volatile` for timeout loops** - Prevents compiler optimization from breaking timing
+3. **Clear RX buffer before sending commands** - Prevents stale data from corrupting responses
 
 ## WiFi Connection
 
