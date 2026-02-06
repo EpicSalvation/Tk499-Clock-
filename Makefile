@@ -33,6 +33,7 @@ CLOCK_SOURCES = \
 	$(SRC_DIR)/clock_main.c \
 	$(SRC_DIR)/lcd.c \
 	$(SRC_DIR)/esp8266.c \
+	$(SRC_DIR)/touch.c \
 	$(COMMON_SOURCES)
 
 # Blink test sources

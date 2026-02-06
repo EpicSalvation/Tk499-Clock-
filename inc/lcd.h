@@ -26,6 +26,22 @@
 #define COLOR_GRAY      0x8410
 #define COLOR_ORANGE    0xFD20
 
+/* Frost Day theme - icy background with blue-tinted grays */
+#define COLOR_DAY_BG        0xE73F  /* Pale icy blue-white background */
+#define COLOR_DAY_TIME      0x3A4D  /* Blue-tinted dark gray for time */
+#define COLOR_DAY_DATE      0x6B7E  /* Medium blue-gray for date text */
+#define COLOR_DAY_BAR       0x4A6E  /* Dark blue-gray for bars */
+#define COLOR_DAY_BARTEXT   0xE73F  /* Light text on bars */
+#define COLOR_DAY_LINE      0xAD7E  /* Light blue-gray for lines */
+
+/* Frost Night theme - dark background with soft blue accents */
+#define COLOR_NIGHT_BG      0x1926  /* Deep blue-black background */
+#define COLOR_NIGHT_TIME    0x9D3F  /* Soft blue-white for time */
+#define COLOR_NIGHT_DATE    0x6B7E  /* Muted blue-gray for date */
+#define COLOR_NIGHT_BAR     0x2945  /* Very dark blue-gray for bars */
+#define COLOR_NIGHT_BARTEXT 0x7BDF  /* Dim text on bars */
+#define COLOR_NIGHT_LINE    0x3A4D  /* Subtle dark line */
+
 /* LCD is connected via TK80 parallel interface peripheral */
 /* See tkm32f499.h for TK80 register definitions */
 
@@ -145,5 +161,25 @@ void LCD_SetBrightness(uint8_t level);
  * @return Current brightness (0-100)
  */
 uint8_t LCD_GetBrightness(void);
+
+/**
+ * Draw a sun icon (for day mode indicator)
+ * @param x X position
+ * @param y Y position
+ * @param size Icon size (width and height)
+ * @param color Icon color
+ * @param bg Background color
+ */
+void LCD_DrawSunIcon(uint16_t x, uint16_t y, uint16_t size, uint16_t color, uint16_t bg);
+
+/**
+ * Draw a moon icon (for night mode indicator)
+ * @param x X position
+ * @param y Y position
+ * @param size Icon size (width and height)
+ * @param color Icon color
+ * @param bg Background color
+ */
+void LCD_DrawMoonIcon(uint16_t x, uint16_t y, uint16_t size, uint16_t color, uint16_t bg);
 
 #endif /* __LCD_H */

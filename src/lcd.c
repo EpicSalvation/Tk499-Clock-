@@ -1011,3 +1011,108 @@ void TIM3_IRQHandler(void)
         GPIOD->BSRR = (1 << 24);  /* PD8 low - backlight off */
     }
 }
+
+/* ============================================================ */
+/* Icon Drawing Functions                                        */
+/* ============================================================ */
+
+/* Draw a filled circle using midpoint algorithm */
+static void draw_filled_circle(int16_t cx, int16_t cy, int16_t r, uint16_t color)
+{
+    int16_t x = 0, y = r;
+    int16_t d = 1 - r;
+
+    while (x <= y) {
+        /* Draw horizontal lines to fill the circle */
+        LCD_FillRect(cx - x, cy - y, 2 * x + 1, 1, color);
+        LCD_FillRect(cx - x, cy + y, 2 * x + 1, 1, color);
+        LCD_FillRect(cx - y, cy - x, 2 * y + 1, 1, color);
+        LCD_FillRect(cx - y, cy + x, 2 * y + 1, 1, color);
+
+        if (d < 0) {
+            d += 2 * x + 3;
+        } else {
+            d += 2 * (x - y) + 5;
+            y--;
+        }
+        x++;
+    }
+}
+
+/* Draw a sun icon - circle with rays */
+void LCD_DrawSunIcon(uint16_t x, uint16_t y, uint16_t size, uint16_t color, uint16_t bg)
+{
+    int16_t cx = x + size / 2;
+    int16_t cy = y + size / 2;
+    int16_t r = size / 4;          /* Inner circle radius */
+    int16_t ray_len = size / 4;    /* Ray length */
+    int16_t ray_start = r + 2;     /* Start of rays */
+    int16_t i;
+
+    /* Clear background */
+    LCD_FillRect(x, y, size, size, bg);
+
+    /* Draw center circle */
+    draw_filled_circle(cx, cy, r, color);
+
+    /* Draw 8 rays */
+    for (i = 0; i < 8; i++) {
+        int16_t dx = 0, dy = 0;
+        switch (i) {
+            case 0: dx = 0;  dy = -1; break;  /* Top */
+            case 1: dx = 1;  dy = -1; break;  /* Top-right */
+            case 2: dx = 1;  dy = 0;  break;  /* Right */
+            case 3: dx = 1;  dy = 1;  break;  /* Bottom-right */
+            case 4: dx = 0;  dy = 1;  break;  /* Bottom */
+            case 5: dx = -1; dy = 1;  break;  /* Bottom-left */
+            case 6: dx = -1; dy = 0;  break;  /* Left */
+            case 7: dx = -1; dy = -1; break;  /* Top-left */
+        }
+        /* Draw ray as small rectangle */
+        if (dx == 0) {
+            /* Vertical ray */
+            if (dy < 0) {
+                /* Top ray - draw upward from sun */
+                LCD_FillRect(cx - 1, cy - ray_start - ray_len, 3, ray_len, color);
+            } else {
+                /* Bottom ray - draw downward from sun */
+                LCD_FillRect(cx - 1, cy + ray_start, 3, ray_len, color);
+            }
+        } else if (dy == 0) {
+            /* Horizontal ray */
+            if (dx < 0) {
+                /* Left ray - draw leftward from sun */
+                LCD_FillRect(cx - ray_start - ray_len, cy - 1, ray_len, 3, color);
+            } else {
+                /* Right ray - draw rightward from sun */
+                LCD_FillRect(cx + ray_start, cy - 1, ray_len, 3, color);
+            }
+        } else {
+            /* Diagonal ray - draw as small squares */
+            int16_t j;
+            for (j = 0; j < ray_len / 2; j++) {
+                LCD_FillRect(cx + dx * (ray_start + j * 2),
+                            cy + dy * (ray_start + j * 2), 2, 2, color);
+            }
+        }
+    }
+}
+
+/* Draw a moon icon - crescent moon */
+void LCD_DrawMoonIcon(uint16_t x, uint16_t y, uint16_t size, uint16_t color, uint16_t bg)
+{
+    int16_t cx = x + size / 2;
+    int16_t cy = y + size / 2;
+    int16_t r = size * 3 / 8;      /* Main circle radius */
+    int16_t cut_r = size * 3 / 10; /* Cutout circle radius */
+    int16_t cut_offset = size / 4; /* Cutout offset to the right */
+
+    /* Clear background */
+    LCD_FillRect(x, y, size, size, bg);
+
+    /* Draw main moon circle */
+    draw_filled_circle(cx, cy, r, color);
+
+    /* Cut out a circle to create crescent */
+    draw_filled_circle(cx + cut_offset, cy, cut_r, bg);
+}

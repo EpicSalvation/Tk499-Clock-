@@ -252,6 +252,45 @@ typedef struct {
 #define GPIO_AF_UART2345    ((uint8_t)0x07)
 
 /* ============================================================ */
+/* TOUCHPAD Peripheral (Built-in Resistive Touch ADC)            */
+/* ============================================================ */
+#define TOUCHPAD_BASE       (APB2PERIPH_BASE + 0x6400)
+
+typedef struct {
+    volatile uint32_t ADDATA;   /* 0x00: ADC data */
+    volatile uint32_t ADCFG;    /* 0x04: ADC configuration */
+    volatile uint32_t ADCR;     /* 0x08: ADC control */
+    volatile uint32_t ADCHS;    /* 0x0C: ADC channel select */
+    volatile uint32_t ADCMPR;   /* 0x10: ADC compare */
+    volatile uint32_t ADSTA;    /* 0x14: ADC status */
+    volatile uint32_t ADDR0;    /* 0x18: ADC data register 0 */
+    volatile uint32_t ADDR1;    /* 0x1C: ADC data register 1 */
+    volatile uint32_t ADDR2;    /* 0x20: ADC data register 2 */
+    volatile uint32_t ADDR3;    /* 0x24: ADC data register 3 */
+    volatile uint32_t ADDR4;    /* 0x28: ADC data register 4 */
+    volatile uint32_t ADDR5;    /* 0x2C: ADC data register 5 */
+    volatile uint32_t ADDR6;    /* 0x30: ADC data register 6 */
+    volatile uint32_t ADDR7;    /* 0x34: ADC data register 7 */
+    volatile uint32_t ADDR8;    /* 0x38: ADC data register 8 */
+    volatile uint32_t ADDR9;    /* 0x3C: ADC data register 9 */
+    uint32_t RESERVED0;         /* 0x40: Reserved */
+    uint32_t RESERVED1;         /* 0x44: Reserved */
+    volatile uint32_t TPXDR;    /* 0x48: Touch panel X data */
+    volatile uint32_t TPYDR;    /* 0x4C: Touch panel Y data */
+    volatile uint32_t TPCR;     /* 0x50: Touch panel control */
+    volatile uint32_t TPFR;     /* 0x54: Touch panel filter */
+    volatile uint32_t TPCSR;    /* 0x58: Touch panel channel select */
+} TOUCHPAD_TypeDef;
+
+#define TOUCHPAD    ((TOUCHPAD_TypeDef *)TOUCHPAD_BASE)
+
+/* TOUCHPAD IRQ number */
+#define TOUCHPAD_IRQn       86
+
+/* GPIO Alternate Function for Touchpad ADC */
+#define GPIO_AF_TOUCHPAD    ((uint8_t)0x0D)
+
+/* ============================================================ */
 /* Peripheral Declarations                                       */
 /* ============================================================ */
 #define GPIOA   ((GPIO_TypeDef *)GPIOA_BASE)
@@ -324,32 +363,6 @@ typedef struct {
 #define RCC_AHBPeriph_GPIOE     ((uint32_t)0x00000010)
 #define RCC_AHBPeriph_GPIOF     ((uint32_t)0x00000020)
 
-/* RCC CR Register Bits (Clock Control) */
-#define RCC_CR_HSION            ((uint32_t)0x00000001)  /* Internal high-speed clock enable */
-#define RCC_CR_HSIRDY           ((uint32_t)0x00000002)  /* Internal high-speed clock ready */
-#define RCC_CR_HSEON            ((uint32_t)0x00010000)  /* External high-speed clock enable */
-#define RCC_CR_HSERDY           ((uint32_t)0x00020000)  /* External high-speed clock ready */
-#define RCC_CR_HSEBYP           ((uint32_t)0x00040000)  /* External high-speed clock bypass */
-#define RCC_CR_PLLON            ((uint32_t)0x01000000)  /* PLL enable */
-#define RCC_CR_PLLRDY           ((uint32_t)0x02000000)  /* PLL ready */
-
-/* RCC CFGR Register Bits (Clock Configuration) */
-#define RCC_CFGR_SW             ((uint32_t)0x00000003)  /* System clock switch mask */
-#define RCC_CFGR_SW_HSI         ((uint32_t)0x00000000)  /* HSI selected as system clock */
-#define RCC_CFGR_SW_HSE         ((uint32_t)0x00000001)  /* HSE selected as system clock */
-#define RCC_CFGR_SW_PLL         ((uint32_t)0x00000002)  /* PLL selected as system clock */
-#define RCC_CFGR_SWS            ((uint32_t)0x0000000C)  /* System clock switch status mask */
-#define RCC_CFGR_SWS_HSI        ((uint32_t)0x00000000)  /* HSI used as system clock */
-#define RCC_CFGR_SWS_HSE        ((uint32_t)0x00000004)  /* HSE used as system clock */
-#define RCC_CFGR_SWS_PLL        ((uint32_t)0x00000008)  /* PLL used as system clock */
-
-/* RCC PLLCFGR Register Bits (PLL Configuration) */
-#define RCC_PLLCFGR_PLLSRC_HSE  ((uint32_t)0x00400000)  /* HSE as PLL source */
-#define RCC_PLLCFGR_PLLSRC_HSI  ((uint32_t)0x00000000)  /* HSI as PLL source */
-
-/* HSE Crystal Frequency (12 MHz on this board) */
-#define HSE_VALUE               ((uint32_t)12000000)
-
 /* RCC AHB2 Peripheral Clock Enable */
 #define RCC_AHB2Periph_TK80     ((uint32_t)0x80000000)
 
@@ -364,12 +377,6 @@ void GPIO_SetBits(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin);
 void GPIO_ResetBits(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin);
 uint8_t GPIO_ReadOutputDataBit(GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin);
 void RCC_AHBPeriphClockCmd(uint32_t RCC_AHBPeriph, int NewState);
-
-/* System Clock Functions */
-void SystemClock_ConfigHSE(void);   /* Configure HSE (12 MHz crystal) as system clock source */
-void SysTick_Init(void);            /* Initialize SysTick for 1ms ticks */
-uint32_t SysTick_GetTick(void);     /* Get current tick count (milliseconds) */
-void SysTick_DelayMs(uint32_t ms);  /* Delay for specified milliseconds */
 
 #define ENABLE  1
 #define DISABLE 0
