@@ -128,10 +128,28 @@ static uint32_t SysTick_GetTick(void)
 #define ICON_Y          (BAR_HEIGHT + 8)
 
 /* ============================================================ */
+/* Brightness slider layout                                      */
+/* ============================================================ */
+#define SLIDER_MARGIN_X     50
+#define SLIDER_X            SLIDER_MARGIN_X
+#define SLIDER_W            (LCD_WIDTH - 2 * SLIDER_MARGIN_X)
+#define SLIDER_H            24
+#define SLIDER_TRACK_H      6
+#define SLIDER_KNOB_W       16
+/* Centered vertically within the bottom bar */
+#define SLIDER_Y            (LCD_HEIGHT - BAR_HEIGHT + (BAR_HEIGHT - SLIDER_H) / 2)
+#define SLIDER_MIN_BRIGHT   5
+#define SLIDER_MAX_BRIGHT   100
+/* 85% translucent = 15% opaque (~38/255); 20% translucent = 80% opaque (~204/255) */
+#define SLIDER_ALPHA_IDLE   38
+#define SLIDER_ALPHA_ACTIVE 204
+
+/* ============================================================ */
 /* Theme support                                                  */
 /* ============================================================ */
 static uint8_t night_mode = 0;
 static uint8_t manual_theme = 0;  /* Set to 1 when user manually toggles */
+static uint8_t slider_active = 0; /* Set to 1 while brightness slider is being touched */
 
 /* Current theme colors (set by apply_theme) */
 static uint16_t theme_bg;
@@ -143,6 +161,57 @@ static uint16_t theme_date;
 static uint16_t theme_bar;
 static uint16_t theme_bartext;
 static uint16_t theme_line;
+
+/* Blend two RGB565 colors. alpha=0 → fully bg, alpha=255 → fully fg. */
+static uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t alpha)
+{
+    uint8_t r_fg = (fg >> 11) & 0x1F;
+    uint8_t g_fg = (fg >> 5)  & 0x3F;
+    uint8_t b_fg =  fg        & 0x1F;
+    uint8_t r_bg = (bg >> 11) & 0x1F;
+    uint8_t g_bg = (bg >> 5)  & 0x3F;
+    uint8_t b_bg =  bg        & 0x1F;
+    uint8_t r = (uint8_t)((r_fg * alpha + r_bg * (255 - alpha)) / 255);
+    uint8_t g = (uint8_t)((g_fg * alpha + g_bg * (255 - alpha)) / 255);
+    uint8_t b = (uint8_t)((b_fg * alpha + b_bg * (255 - alpha)) / 255);
+    return ((uint16_t)r << 11) | ((uint16_t)g << 5) | b;
+}
+
+/*
+ * Draw the brightness slider overlaid on the bottom bar.
+ * active=0 → 85% translucent (nearly invisible)
+ * active=1 → 20% translucent (highly visible)
+ */
+static void draw_brightness_slider(uint8_t active)
+{
+    uint8_t brightness = LCD_GetBrightness();
+    if (brightness < SLIDER_MIN_BRIGHT) brightness = SLIDER_MIN_BRIGHT;
+    if (brightness > SLIDER_MAX_BRIGHT) brightness = SLIDER_MAX_BRIGHT;
+
+    /* Map brightness (5-100) → knob x position (SLIDER_X … SLIDER_X+SLIDER_W) */
+    uint16_t knob_x = SLIDER_X +
+        (uint16_t)((uint32_t)(brightness - SLIDER_MIN_BRIGHT) * SLIDER_W
+                   / (SLIDER_MAX_BRIGHT - SLIDER_MIN_BRIGHT));
+
+    /* Track uses the theme alpha; knob is slightly more opaque for contrast */
+    uint8_t track_alpha = active ? SLIDER_ALPHA_ACTIVE : SLIDER_ALPHA_IDLE;
+    uint8_t knob_alpha  = active ? 234 : 48;
+
+    uint16_t track_color = blend565(theme_bartext, theme_bar, track_alpha);
+    uint16_t knob_color  = blend565(theme_bartext, theme_bar, knob_alpha);
+
+    /* Restore bar background for the slider area first */
+    LCD_FillRect(SLIDER_X, SLIDER_Y, SLIDER_W, SLIDER_H, theme_bar);
+
+    /* Draw thin horizontal track */
+    uint16_t track_y = SLIDER_Y + (SLIDER_H - SLIDER_TRACK_H) / 2;
+    LCD_FillRect(SLIDER_X, track_y, SLIDER_W, SLIDER_TRACK_H, track_color);
+
+    /* Draw knob centered on knob_x, full slider height */
+    uint16_t knob_left = (knob_x >= SLIDER_KNOB_W / 2)
+                         ? knob_x - SLIDER_KNOB_W / 2 : 0;
+    LCD_FillRect(knob_left, SLIDER_Y, SLIDER_KNOB_W, SLIDER_H, knob_color);
+}
 
 static void apply_theme(uint8_t night)
 {
@@ -196,6 +265,8 @@ static void update_status(const char *msg)
     /* Clear left portion of bottom bar */
     LCD_FillRect(0, LCD_HEIGHT - BAR_HEIGHT, 200, BAR_HEIGHT, theme_bar);
     LCD_DrawString(4, STATUS_Y, msg, theme_bartext, theme_bar);
+    /* Restore slider which may overlap the cleared area */
+    draw_brightness_slider(slider_active);
 }
 
 /* Display time string - only updates digits that changed to prevent flicker */
@@ -291,6 +362,9 @@ static void draw_ui(void)
 
     /* Draw theme toggle icon */
     draw_theme_icon();
+
+    /* Draw brightness slider over the bottom bar */
+    draw_brightness_slider(slider_active);
 }
 
 /* Check if we should be in night mode based on hour (8 PM - 6 AM) */
@@ -447,7 +521,8 @@ int main(void)
     /* Record starting tick for accurate timing */
     uint32_t last_second_tick = SysTick_GetTick();
     uint32_t last_sync_tick = last_second_tick;
-    uint32_t last_touch_tick = 0;  /* For touch debounce */
+    uint32_t last_touch_tick = 0;     /* For icon-tap debounce */
+    uint32_t last_touch_read_tick = 0; /* Rate-limits all touch reads (~60 fps) */
     Touch_State_t touch;
 
     /* Main loop - uses hardware SysTick for precise 1-second intervals */
@@ -500,19 +575,43 @@ int main(void)
             }
         }
 
-        /* Check for touch (with 200ms debounce) */
-        if ((current_tick - last_touch_tick) >= 200) {
+        /* Check for touch input at ~60 fps (16ms gate) to avoid flooding the ADC */
+        if ((current_tick - last_touch_read_tick) >= 16) {
+            last_touch_read_tick = current_tick;
             Touch_Read(&touch);
 
             if (touch.pressed) {
-                /* Check if touch is on the theme icon */
+                /* Priority 1: Brightness slider - continuous tracking, no debounce */
                 if (Touch_InRegion(touch.x, touch.y,
-                                   ICON_X - 8, ICON_Y - 8,
-                                   ICON_SIZE + 16, ICON_SIZE + 16)) {
-                    toggle_theme(hours, minutes, seconds, year, month, day);
+                                   SLIDER_X, SLIDER_Y, SLIDER_W, SLIDER_H)) {
+                    int32_t rel_x = (int32_t)touch.x - SLIDER_X;
+                    if (rel_x < 0) rel_x = 0;
+                    if (rel_x > (int32_t)SLIDER_W) rel_x = (int32_t)SLIDER_W;
+                    uint8_t new_brightness = SLIDER_MIN_BRIGHT +
+                        (uint8_t)((uint32_t)rel_x *
+                                  (SLIDER_MAX_BRIGHT - SLIDER_MIN_BRIGHT) / SLIDER_W);
+                    LCD_SetBrightness(new_brightness);
+                    slider_active = 1;
+                    draw_brightness_slider(1);
+                    /* Suppress icon-tap debounce while the slider is in use */
+                    last_touch_tick = current_tick;
+                }
+                /* Priority 2: Theme icon tap - 200ms debounce */
+                else if ((current_tick - last_touch_tick) >= 200) {
+                    if (Touch_InRegion(touch.x, touch.y,
+                                       ICON_X - 8, ICON_Y - 8,
+                                       ICON_SIZE + 16, ICON_SIZE + 16)) {
+                        toggle_theme(hours, minutes, seconds, year, month, day);
+                    }
+                    last_touch_tick = current_tick;
+                }
+            } else {
+                /* Finger lifted - fade slider back to idle state */
+                if (slider_active) {
+                    slider_active = 0;
+                    draw_brightness_slider(0);
                 }
             }
-            last_touch_tick = current_tick;
         }
 
         /* Wait for interrupt - reduces power consumption */
