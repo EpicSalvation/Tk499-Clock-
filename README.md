@@ -5,8 +5,9 @@ A clock project based on the TKM32F499 4.3" SmartBoard (ARM Cortex-M4, 240MHz).
 ## Features
 
 - **NTP Time Sync** - Automatic time synchronization via ESP8266 WiFi module
-- **Day/Night Themes** - Automatic theme switching based on time of day (7 AM - 10 PM)
+- **Day/Night Themes** - Automatic theme switching based on time of day (6 AM - 8 PM day, 8 PM - 6 AM night)
 - **Touch Screen** - Tap the sun/moon icon to manually toggle themes
+- **Brightness Slider** - Translucent slider above the bottom bar for adjustable backlight, remembers brightness per mode
 - **Large Display** - 800x480 LCD with 6x scaled time display
 
 ## Project Structure
@@ -128,21 +129,23 @@ If the board stops working (no "TK499_V2" drive appears):
 - **Top bar**: Shows "TKM32F499 Clock" title and version
 - **Center**: Large time display (HH:MM:SS)
 - **Below time**: Current date
+- **Brightness slider**: Translucent slider just above the bottom bar
 - **Bottom bar**: Status messages (WiFi connection, sync status)
 - **Upper right**: Sun/moon icon for theme toggle
 
 ### Theme Toggle
 
-- **Automatic**: Day theme (7 AM - 10 PM), Night theme (10 PM - 7 AM)
-- **Manual**: Tap the sun/moon icon to override automatic switching
-- **Night mode**: Reduced backlight brightness (20%)
+- **Automatic**: Day theme (6 AM - 8 PM), Night theme (8 PM - 6 AM)
+- **Manual**: Tap the sun/moon icon to override automatic switching; auto-switching resumes at the next natural transition
+- **Night mode**: Reduced backlight brightness (default 20%)
+- **Brightness memory**: Each mode remembers its own brightness level — adjusting the slider in day mode won't affect night mode brightness, and vice versa
 
 ### NTP Time Sync
 
 The clock syncs time via HTTP through the ESP8266 WiFi module:
 1. Connects to configured WiFi network
 2. Fetches time from `time.nist.gov` (or local NTP server)
-3. Re-syncs every 5 minutes
+3. Re-syncs every 10 minutes
 
 See `ESP8266_WIFI.md` for details on the WiFi module integration.
 

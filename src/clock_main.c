@@ -136,8 +136,8 @@ static uint32_t SysTick_GetTick(void)
 #define SLIDER_H            24
 #define SLIDER_TRACK_H      6
 #define SLIDER_KNOB_W       16
-/* Centered vertically within the bottom bar */
-#define SLIDER_Y            (LCD_HEIGHT - BAR_HEIGHT + (BAR_HEIGHT - SLIDER_H) / 2)
+/* Positioned just above the bottom bar */
+#define SLIDER_Y            (LCD_HEIGHT - BAR_HEIGHT - SLIDER_H)
 #define SLIDER_MIN_BRIGHT   5
 #define SLIDER_MAX_BRIGHT   100
 /* 85% translucent = 15% opaque (~38/255); 20% translucent = 80% opaque (~204/255) */
@@ -150,6 +150,10 @@ static uint32_t SysTick_GetTick(void)
 static uint8_t night_mode = 0;
 static uint8_t manual_theme = 0;  /* Set to 1 when user manually toggles */
 static uint8_t slider_active = 0; /* Set to 1 while brightness slider is being touched */
+
+/* Per-mode brightness memory (defaults match initial theme brightness) */
+static uint8_t day_brightness = 100;
+static uint8_t night_brightness = 20;
 
 /* Current theme colors (set by apply_theme) */
 static uint16_t theme_bg;
@@ -197,11 +201,11 @@ static void draw_brightness_slider(uint8_t active)
     uint8_t track_alpha = active ? SLIDER_ALPHA_ACTIVE : SLIDER_ALPHA_IDLE;
     uint8_t knob_alpha  = active ? 234 : 48;
 
-    uint16_t track_color = blend565(theme_bartext, theme_bar, track_alpha);
-    uint16_t knob_color  = blend565(theme_bartext, theme_bar, knob_alpha);
+    uint16_t track_color = blend565(theme_line, theme_bg, track_alpha);
+    uint16_t knob_color  = blend565(theme_line, theme_bg, knob_alpha);
 
-    /* Restore bar background for the slider area first */
-    LCD_FillRect(SLIDER_X, SLIDER_Y, SLIDER_W, SLIDER_H, theme_bar);
+    /* Restore background for the slider area first */
+    LCD_FillRect(SLIDER_X, SLIDER_Y, SLIDER_W, SLIDER_H, theme_bg);
 
     /* Draw thin horizontal track */
     uint16_t track_y = SLIDER_Y + (SLIDER_H - SLIDER_TRACK_H) / 2;
@@ -215,6 +219,14 @@ static void draw_brightness_slider(uint8_t active)
 
 static void apply_theme(uint8_t night)
 {
+    /* Save current brightness to the mode we're leaving */
+    if (night != night_mode) {
+        if (night_mode)
+            night_brightness = LCD_GetBrightness();
+        else
+            day_brightness = LCD_GetBrightness();
+    }
+
     night_mode = night;
     prev_time_str[0] = '\0';  /* Force full redraw of time */
     if (night) {
@@ -224,7 +236,7 @@ static void apply_theme(uint8_t night)
         theme_bar     = COLOR_NIGHT_BAR;
         theme_bartext = COLOR_NIGHT_BARTEXT;
         theme_line    = COLOR_NIGHT_LINE;
-        LCD_SetBrightness(20);
+        LCD_SetBrightness(night_brightness);
     } else {
         theme_bg      = COLOR_DAY_BG;
         theme_time    = COLOR_DAY_TIME;
@@ -232,7 +244,7 @@ static void apply_theme(uint8_t night)
         theme_bar     = COLOR_DAY_BAR;
         theme_bartext = COLOR_DAY_BARTEXT;
         theme_line    = COLOR_DAY_LINE;
-        LCD_SetBrightness(100);
+        LCD_SetBrightness(day_brightness);
     }
 }
 
@@ -265,8 +277,6 @@ static void update_status(const char *msg)
     /* Clear left portion of bottom bar */
     LCD_FillRect(0, LCD_HEIGHT - BAR_HEIGHT, 200, BAR_HEIGHT, theme_bar);
     LCD_DrawString(4, STATUS_Y, msg, theme_bartext, theme_bar);
-    /* Restore slider which may overlap the cleared area */
-    draw_brightness_slider(slider_active);
 }
 
 /* Display time string - only updates digits that changed to prevent flicker */
@@ -363,7 +373,7 @@ static void draw_ui(void)
     /* Draw theme toggle icon */
     draw_theme_icon();
 
-    /* Draw brightness slider over the bottom bar */
+    /* Draw brightness slider above the bottom bar */
     draw_brightness_slider(slider_active);
 }
 
@@ -373,14 +383,23 @@ static uint8_t should_be_night(uint8_t hour)
     return (hour >= 20 || hour < 6);
 }
 
+/* Track the natural day/night period so we can detect boundary crossings */
+static uint8_t prev_auto_night = 0xFF;  /* 0xFF = not yet initialized */
+
 /* Update theme based on time if needed (skipped if user manually set theme) */
 static void update_theme_for_time(uint8_t hours, uint8_t minutes, uint8_t seconds,
                                   uint16_t year, uint8_t month, uint8_t day)
 {
+    uint8_t want_night = should_be_night(hours);
+
+    /* Detect natural period transition (6 AM / 8 PM) and reset manual override */
+    if (prev_auto_night != 0xFF && want_night != prev_auto_night)
+        manual_theme = 0;
+    prev_auto_night = want_night;
+
     /* Skip auto switching if user manually toggled the theme */
     if (manual_theme) return;
 
-    uint8_t want_night = should_be_night(hours);
     if (want_night != night_mode) {
         apply_theme(want_night);
         draw_ui();
@@ -550,10 +569,8 @@ int main(void)
             /* Update display */
             display_time(hours, minutes, seconds);
 
-            /* Check for day/night theme switch at hour boundaries */
-            if (minutes == 0 && seconds == 0) {
-                update_theme_for_time(hours, minutes, seconds, year, month, day);
-            }
+            /* Check for day/night theme switch */
+            update_theme_for_time(hours, minutes, seconds, year, month, day);
         }
 
         /* Re-sync with NTP every ~10 minutes (600000 ms) if connected */
@@ -591,6 +608,10 @@ int main(void)
                         (uint8_t)((uint32_t)rel_x *
                                   (SLIDER_MAX_BRIGHT - SLIDER_MIN_BRIGHT) / SLIDER_W);
                     LCD_SetBrightness(new_brightness);
+                    if (night_mode)
+                        night_brightness = new_brightness;
+                    else
+                        day_brightness = new_brightness;
                     slider_active = 1;
                     draw_brightness_slider(1);
                     /* Suppress icon-tap debounce while the slider is in use */

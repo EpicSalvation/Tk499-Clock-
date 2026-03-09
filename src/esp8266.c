@@ -57,6 +57,21 @@ static int UART2_ReceiveByteTimeout(uint32_t timeout_ms)
     return -1;
 }
 
+/* Fast receive for bulk data - shorter timeout between bytes
+ * Use after first byte received to speed up data transfer */
+static int UART2_ReceiveByteFast(uint32_t timeout_ms)
+{
+    uint32_t timeout = timeout_ms * 1000;
+    while (timeout--) {
+        if (UART2->CSR & UART_CSR_RXAVL) {
+            esp_delay(100);  /* Keep the settling delay */
+            return (uint8_t)UART2->RDR;
+        }
+        esp_delay(24);
+    }
+    return -1;
+}
+
 /* Clear receive buffer with timeout */
 static void ESP_ClearRxBuffer(void)
 {
@@ -327,7 +342,6 @@ int ESP_GetIP(char *ip_buf)
 int ESP_GetNTPTime(ESP_Time_t *time, int8_t timezone_offset)
 {
     char response[700];  /* Need space for full HTTP response (~644 bytes) */
-    int i;
 
     /* Check if we have a valid IP (WiFi connected) */
     if (ESP_SendCommand("CIFSR", response, sizeof(response), 5000) != ESP_OK) {
@@ -373,16 +387,29 @@ int ESP_GetNTPTime(ESP_Time_t *time, int8_t timezone_offset)
     memset(response, 0, sizeof(response));
     ESP_ReadResponse(response, 60, 10000, "SEND OK");
 
-    /* Read HTTP response - need ~644 bytes for headers + JSON body */
+    /* Read HTTP response - need ~644 bytes for headers + JSON body
+     * Strategy: Wait up to 5s for first byte, then use 50ms timeout between bytes.
+     * Network can have gaps, so be generous with inter-character timeout.
+     */
     memset(response, 0, sizeof(response));
     int total = 0;
     int b;
+    int no_data_count = 0;
 
-    for (i = 0; i < 300 && total < 680; i++) {
-        b = UART2_ReceiveByteTimeout(100);
-        if (b >= 0) {
-            response[total++] = (char)b;
-            i = 0;  /* Reset timeout when data arrives */
+    /* Wait for first byte with long timeout */
+    b = UART2_ReceiveByteTimeout(5000);
+    if (b >= 0) {
+        response[total++] = (char)b;
+
+        /* Read remaining bytes with moderate inter-character timeout */
+        while (total < 680 && no_data_count < 20) {
+            b = UART2_ReceiveByteFast(50);  /* 50ms timeout between bytes */
+            if (b >= 0) {
+                response[total++] = (char)b;
+                no_data_count = 0;
+            } else {
+                no_data_count++;  /* 20 * 50ms = 1s of silence = end of data */
+            }
         }
     }
     response[total] = '\0';
@@ -390,69 +417,77 @@ int ESP_GetNTPTime(ESP_Time_t *time, int8_t timezone_offset)
     /* Close connection */
     ESP_SendCommand("CIPCLOSE", NULL, 0, 1000);
 
-    /* Parse JSON: "currentDateTime":"2024-01-15T14:30:45Z" */
-    char *dt = strstr(response, "currentDateTime");
-    if (!dt) {
+    /* Parse JSON: "currentFileTime":133512345678901234
+     * This is 100-nanosecond intervals since Jan 1, 1601 UTC (.NET FileTime)
+     * Convert to Unix time: subtract 116444736000000000, divide by 10000000
+     */
+    char *ft = strstr(response, "currentFileTime");
+    if (!ft) {
         return ESP_ERROR;
     }
 
-    /* Find the date string after the colon and quote */
-    dt = strchr(dt, ':');
-    if (!dt) return ESP_ERROR;
-    dt++;  /* Skip ':' */
-    while (*dt == ' ' || *dt == '"') dt++;
+    /* Find the number after the colon */
+    ft = strchr(ft, ':');
+    if (!ft) return ESP_ERROR;
+    ft++;  /* Skip ':' */
+    while (*ft == ' ') ft++;
 
-    /* Parse: YYYY-MM-DDTHH:MM:SS */
-    /* Year */
-    time->year = 0;
-    for (i = 0; i < 4 && *dt >= '0' && *dt <= '9'; i++) {
-        time->year = time->year * 10 + (*dt++ - '0');
-    }
-    if (*dt == '-') dt++;
-
-    /* Month */
-    time->month = 0;
-    for (i = 0; i < 2 && *dt >= '0' && *dt <= '9'; i++) {
-        time->month = time->month * 10 + (*dt++ - '0');
-    }
-    if (*dt == '-') dt++;
-
-    /* Day */
-    time->day = 0;
-    for (i = 0; i < 2 && *dt >= '0' && *dt <= '9'; i++) {
-        time->day = time->day * 10 + (*dt++ - '0');
-    }
-    if (*dt == 'T') dt++;
-
-    /* Hours */
-    time->hours = 0;
-    for (i = 0; i < 2 && *dt >= '0' && *dt <= '9'; i++) {
-        time->hours = time->hours * 10 + (*dt++ - '0');
-    }
-    if (*dt == ':') dt++;
-
-    /* Minutes */
-    time->minutes = 0;
-    for (i = 0; i < 2 && *dt >= '0' && *dt <= '9'; i++) {
-        time->minutes = time->minutes * 10 + (*dt++ - '0');
-    }
-    if (*dt == ':') dt++;
-
-    /* Seconds */
-    time->seconds = 0;
-    for (i = 0; i < 2 && *dt >= '0' && *dt <= '9'; i++) {
-        time->seconds = time->seconds * 10 + (*dt++ - '0');
+    /* Parse the 64-bit integer */
+    uint64_t fileTime = 0;
+    while (*ft >= '0' && *ft <= '9') {
+        fileTime = fileTime * 10 + (*ft++ - '0');
     }
 
-    /* Apply timezone offset (NIST time is UTC) */
-    int hours_adj = (int)time->hours + timezone_offset;
-    if (hours_adj < 0) {
-        hours_adj += 24;
-        /* Note: day rollback not handled for simplicity */
-    } else if (hours_adj >= 24) {
-        hours_adj -= 24;
+    /* Convert FileTime to Unix seconds
+     * FileTime epoch: Jan 1, 1601
+     * Unix epoch: Jan 1, 1970
+     * Difference: 116444736000000000 (100-ns intervals)
+     */
+    const uint64_t FILETIME_UNIX_DIFF = 116444736000000000ULL;
+    uint64_t unix_seconds = (fileTime - FILETIME_UNIX_DIFF) / 10000000ULL;
+
+    /* Apply timezone offset (in seconds) */
+    int32_t tz_offset_seconds = timezone_offset * 3600;
+    if (tz_offset_seconds < 0) {
+        unix_seconds -= (uint64_t)(-tz_offset_seconds);
+    } else {
+        unix_seconds += (uint64_t)tz_offset_seconds;
     }
-    time->hours = (uint8_t)hours_adj;
+
+    /* Extract time of day */
+    uint32_t seconds_of_day = (uint32_t)(unix_seconds % 86400ULL);
+    time->hours = (uint8_t)(seconds_of_day / 3600);
+    time->minutes = (uint8_t)((seconds_of_day % 3600) / 60);
+    time->seconds = (uint8_t)(seconds_of_day % 60);
+
+    /* For date, calculate days since Unix epoch and convert */
+    uint32_t days_since_epoch = (uint32_t)(unix_seconds / 86400ULL);
+
+    /* Simple date calculation (good from 1970-2099) */
+    uint32_t year = 1970;
+    uint32_t days_remaining = days_since_epoch;
+
+    while (1) {
+        uint32_t days_in_year = ((year % 4 == 0) && (year % 100 != 0 || year % 400 == 0)) ? 366 : 365;
+        if (days_remaining < days_in_year) break;
+        days_remaining -= days_in_year;
+        year++;
+    }
+    time->year = (uint16_t)year;
+
+    /* Calculate month and day */
+    static const uint8_t days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    uint8_t is_leap = ((year % 4 == 0) && (year % 100 != 0 || year % 400 == 0)) ? 1 : 0;
+    uint8_t month = 0;
+    while (month < 12) {
+        uint8_t dim = days_in_month[month];
+        if (month == 1 && is_leap) dim = 29;
+        if (days_remaining < dim) break;
+        days_remaining -= dim;
+        month++;
+    }
+    time->month = month + 1;
+    time->day = (uint8_t)(days_remaining + 1);
 
     /* Validate parsed values */
     if (time->year >= 2020 && time->year <= 2100 &&
