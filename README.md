@@ -6,7 +6,8 @@ A clock project based on the TKM32F499 4.3" SmartBoard (ARM Cortex-M4, 240MHz).
 
 - **NTP Time Sync** - Automatic time synchronization via ESP8266 WiFi module
 - **Day/Night Themes** - Automatic theme switching based on time of day (6 AM - 8 PM day, 8 PM - 6 AM night)
-- **Touch Screen** - Tap the sun/moon icon to manually toggle themes
+- **Touch Screen** - Hamburger menu with day/night toggle and DST toggle
+- **DST Toggle** - Add or remove 1 hour from timezone offset via menu
 - **Brightness Slider** - Translucent slider above the bottom bar for adjustable backlight, remembers brightness per mode
 - **Large Display** - 800x480 LCD with 6x scaled time display
 
@@ -131,14 +132,29 @@ If the board stops working (no "TK499_V2" drive appears):
 - **Below time**: Current date
 - **Brightness slider**: Translucent slider just above the bottom bar
 - **Bottom bar**: Status messages (WiFi connection, sync status)
-- **Upper right**: Sun/moon icon for theme toggle
+- **Upper right**: Hamburger menu icon
+
+### Hamburger Menu
+
+Tap the hamburger icon (upper right) to open a dropdown menu with two options:
+
+- **Day/Night** — Toggle between day and night themes; closes the menu and redraws the UI
+- **DST** — Toggle Daylight Saving Time (+1 hour); menu stays open showing updated ON/OFF state
+
+Tap anywhere outside the menu to close it.
 
 ### Theme Toggle
 
 - **Automatic**: Day theme (6 AM - 8 PM), Night theme (8 PM - 6 AM)
-- **Manual**: Tap the sun/moon icon to override automatic switching; auto-switching resumes at the next natural transition
+- **Manual**: Use the menu's Day/Night option to override automatic switching; auto-switching resumes at the next natural transition
 - **Night mode**: Reduced backlight brightness (default 20%)
 - **Brightness memory**: Each mode remembers its own brightness level — adjusting the slider in day mode won't affect night mode brightness, and vice versa
+
+### DST Toggle
+
+- **DST ON**: Adds 1 hour to the configured timezone offset
+- **DST OFF**: Removes the extra hour
+- NTP re-syncs (every 10 minutes) automatically use the correct offset
 
 ### NTP Time Sync
 

@@ -145,11 +145,23 @@ static uint32_t SysTick_GetTick(void)
 #define SLIDER_ALPHA_ACTIVE 204
 
 /* ============================================================ */
+/* Menu layout                                                    */
+/* ============================================================ */
+#define MENU_W          180
+#define MENU_ITEM_H     32
+#define MENU_PADDING    6
+#define MENU_H          (2 * MENU_ITEM_H + 2 * MENU_PADDING)  /* 76 */
+#define MENU_X          (ICON_X + ICON_SIZE - MENU_W)          /* 612 */
+#define MENU_Y          (ICON_Y + ICON_SIZE + 4)               /* 80 */
+
+/* ============================================================ */
 /* Theme support                                                  */
 /* ============================================================ */
 static uint8_t night_mode = 0;
 static uint8_t manual_theme = 0;  /* Set to 1 when user manually toggles */
 static uint8_t slider_active = 0; /* Set to 1 while brightness slider is being touched */
+static uint8_t menu_open = 0;     /* 1 when dropdown menu is visible */
+static uint8_t dst_enabled = 0;   /* 1 when DST is active (+1 hour) */
 
 /* Per-mode brightness memory (defaults match initial theme brightness) */
 static uint8_t day_brightness = 100;
@@ -248,15 +260,58 @@ static void apply_theme(uint8_t night)
     }
 }
 
-/* Draw theme toggle icon (sun for day mode, moon for night mode) */
-static void draw_theme_icon(void)
+/* Draw hamburger menu icon (3 horizontal bars) */
+static void draw_hamburger_icon(void)
 {
-    if (night_mode) {
-        /* Moon: silvery white on dark background */
-        LCD_DrawMoonIcon(ICON_X, ICON_Y, ICON_SIZE, 0xC618, theme_bg);  /* Silver-gray */
+    /* Clear icon area */
+    LCD_FillRect(ICON_X, ICON_Y, ICON_SIZE, ICON_SIZE, theme_bg);
+    /* 3 bars: 22px wide, 4px tall, centered horizontally, 6px gap between */
+    uint16_t bar_w = 22, bar_h = 4, gap = 6;
+    uint16_t bx = ICON_X + (ICON_SIZE - bar_w) / 2;
+    uint16_t total_h = 3 * bar_h + 2 * gap;  /* 24 */
+    uint16_t by = ICON_Y + (ICON_SIZE - total_h) / 2;
+    LCD_FillRect(bx, by, bar_w, bar_h, theme_line);
+    LCD_FillRect(bx, by + bar_h + gap, bar_w, bar_h, theme_line);
+    LCD_FillRect(bx, by + 2 * (bar_h + gap), bar_w, bar_h, theme_line);
+}
+
+/* Draw dropdown menu */
+static void draw_menu(void)
+{
+    /* Background */
+    LCD_FillRect(MENU_X, MENU_Y, MENU_W, MENU_H, theme_bar);
+    /* 2px border */
+    LCD_FillRect(MENU_X, MENU_Y, MENU_W, 2, theme_line);                   /* top */
+    LCD_FillRect(MENU_X, MENU_Y + MENU_H - 2, MENU_W, 2, theme_line);     /* bottom */
+    LCD_FillRect(MENU_X, MENU_Y, 2, MENU_H, theme_line);                   /* left */
+    LCD_FillRect(MENU_X + MENU_W - 2, MENU_Y, 2, MENU_H, theme_line);     /* right */
+    /* Row 1: Day/Night */
+    uint16_t row1_y = MENU_Y + MENU_PADDING;
+    LCD_DrawString(MENU_X + 8, row1_y + 8, "Day/Night", theme_bartext, theme_bar);
+    LCD_DrawString(MENU_X + MENU_W - 48, row1_y + 8,
+                   night_mode ? "Night" : "Day", theme_bartext, theme_bar);
+    /* Row 2: DST */
+    uint16_t row2_y = MENU_Y + MENU_PADDING + MENU_ITEM_H;
+    LCD_DrawString(MENU_X + 8, row2_y + 8, "DST", theme_bartext, theme_bar);
+    LCD_DrawString(MENU_X + MENU_W - 32, row2_y + 8,
+                   dst_enabled ? "ON" : "OFF", theme_bartext, theme_bar);
+}
+
+/* Close menu and erase it */
+static void close_menu(void)
+{
+    menu_open = 0;
+    LCD_FillRect(MENU_X, MENU_Y, MENU_W, MENU_H, theme_bg);
+}
+
+/* Toggle DST and adjust hours */
+static void toggle_dst(uint8_t *hours)
+{
+    dst_enabled = !dst_enabled;
+    if (dst_enabled) {
+        *hours = (*hours + 1) % 24;
     } else {
-        /* Sun: bright orange/yellow on light background */
-        LCD_DrawSunIcon(ICON_X, ICON_Y, ICON_SIZE, COLOR_ORANGE, theme_bg);
+        *hours = (*hours + 23) % 24;  /* -1 mod 24 */
     }
 }
 
@@ -370,8 +425,9 @@ static void draw_ui(void)
     LCD_FillRect(LINE_MARGIN, LINE_ABOVE_Y, LCD_WIDTH - (LINE_MARGIN * 2), LINE_THICKNESS, theme_line);
     LCD_FillRect(LINE_MARGIN, LINE_BELOW_Y, LCD_WIDTH - (LINE_MARGIN * 2), LINE_THICKNESS, theme_line);
 
-    /* Draw theme toggle icon */
-    draw_theme_icon();
+    /* Draw hamburger menu icon */
+    menu_open = 0;
+    draw_hamburger_icon();
 
     /* Draw brightness slider above the bottom bar */
     draw_brightness_slider(slider_active);
@@ -494,7 +550,7 @@ int main(void)
 
             /* Get time from HTTP API */
             update_status("Getting time...");
-            if (ESP_GetNTPTime(&ntp_time, TIMEZONE_OFFSET) == ESP_OK) {
+            if (ESP_GetNTPTime(&ntp_time, TIMEZONE_OFFSET + dst_enabled) == ESP_OK) {
                 hours = ntp_time.hours;
                 minutes = ntp_time.minutes;
                 seconds = ntp_time.seconds;
@@ -577,7 +633,7 @@ int main(void)
         if (wifi_connected && (current_tick - last_sync_tick) >= 600000) {
             last_sync_tick = current_tick;
             update_status("NTP sync...");
-            if (ESP_GetNTPTime(&ntp_time, TIMEZONE_OFFSET) == ESP_OK) {
+            if (ESP_GetNTPTime(&ntp_time, TIMEZONE_OFFSET + dst_enabled) == ESP_OK) {
                 hours = ntp_time.hours;
                 minutes = ntp_time.minutes;
                 seconds = ntp_time.seconds;
@@ -598,33 +654,61 @@ int main(void)
             Touch_Read(&touch);
 
             if (touch.pressed) {
-                /* Priority 1: Brightness slider - continuous tracking, no debounce */
-                if (Touch_InRegion(touch.x, touch.y,
-                                   SLIDER_X, SLIDER_Y, SLIDER_W, SLIDER_H)) {
-                    int32_t rel_x = (int32_t)touch.x - SLIDER_X;
-                    if (rel_x < 0) rel_x = 0;
-                    if (rel_x > (int32_t)SLIDER_W) rel_x = (int32_t)SLIDER_W;
-                    uint8_t new_brightness = SLIDER_MIN_BRIGHT +
-                        (uint8_t)((uint32_t)rel_x *
-                                  (SLIDER_MAX_BRIGHT - SLIDER_MIN_BRIGHT) / SLIDER_W);
-                    LCD_SetBrightness(new_brightness);
-                    if (night_mode)
-                        night_brightness = new_brightness;
-                    else
-                        day_brightness = new_brightness;
-                    slider_active = 1;
-                    draw_brightness_slider(1);
-                    /* Suppress icon-tap debounce while the slider is in use */
-                    last_touch_tick = current_tick;
-                }
-                /* Priority 2: Theme icon tap - 200ms debounce */
-                else if ((current_tick - last_touch_tick) >= 200) {
-                    if (Touch_InRegion(touch.x, touch.y,
-                                       ICON_X - 8, ICON_Y - 8,
-                                       ICON_SIZE + 16, ICON_SIZE + 16)) {
-                        toggle_theme(hours, minutes, seconds, year, month, day);
+                if (menu_open) {
+                    /* Menu is open - check menu item taps (200ms debounce) */
+                    if ((current_tick - last_touch_tick) >= 200) {
+                        uint16_t row1_y = MENU_Y + MENU_PADDING;
+                        uint16_t row2_y = MENU_Y + MENU_PADDING + MENU_ITEM_H;
+                        if (Touch_InRegion(touch.x, touch.y,
+                                           MENU_X, row1_y, MENU_W, MENU_ITEM_H)) {
+                            /* Row 1: Day/Night toggle */
+                            close_menu();
+                            toggle_theme(hours, minutes, seconds, year, month, day);
+                        } else if (Touch_InRegion(touch.x, touch.y,
+                                                  MENU_X, row2_y, MENU_W, MENU_ITEM_H)) {
+                            /* Row 2: DST toggle */
+                            toggle_dst(&hours);
+                            prev_time_str[0] = '\0';  /* Force full time redraw */
+                            display_time(hours, minutes, seconds);
+                            draw_menu();  /* Redraw menu to show updated state */
+                            update_status(dst_enabled ? "DST ON" : "DST OFF");
+                        } else {
+                            /* Touch outside menu - close it */
+                            close_menu();
+                        }
+                        last_touch_tick = current_tick;
                     }
-                    last_touch_tick = current_tick;
+                } else {
+                    /* Menu is closed */
+                    /* Priority 1: Brightness slider - continuous tracking, no debounce */
+                    if (Touch_InRegion(touch.x, touch.y,
+                                       SLIDER_X, SLIDER_Y, SLIDER_W, SLIDER_H)) {
+                        int32_t rel_x = (int32_t)touch.x - SLIDER_X;
+                        if (rel_x < 0) rel_x = 0;
+                        if (rel_x > (int32_t)SLIDER_W) rel_x = (int32_t)SLIDER_W;
+                        uint8_t new_brightness = SLIDER_MIN_BRIGHT +
+                            (uint8_t)((uint32_t)rel_x *
+                                      (SLIDER_MAX_BRIGHT - SLIDER_MIN_BRIGHT) / SLIDER_W);
+                        LCD_SetBrightness(new_brightness);
+                        if (night_mode)
+                            night_brightness = new_brightness;
+                        else
+                            day_brightness = new_brightness;
+                        slider_active = 1;
+                        draw_brightness_slider(1);
+                        /* Suppress icon-tap debounce while the slider is in use */
+                        last_touch_tick = current_tick;
+                    }
+                    /* Priority 2: Hamburger icon tap - 200ms debounce */
+                    else if ((current_tick - last_touch_tick) >= 200) {
+                        if (Touch_InRegion(touch.x, touch.y,
+                                           ICON_X - 8, ICON_Y - 8,
+                                           ICON_SIZE + 16, ICON_SIZE + 16)) {
+                            menu_open = 1;
+                            draw_menu();
+                        }
+                        last_touch_tick = current_tick;
+                    }
                 }
             } else {
                 /* Finger lifted - fade slider back to idle state */
