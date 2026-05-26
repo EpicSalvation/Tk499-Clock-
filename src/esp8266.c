@@ -45,14 +45,19 @@ static void UART2_SendString(const char *str)
 /* Receive with timeout, returns -1 on timeout */
 static int UART2_ReceiveByteTimeout(uint32_t timeout_ms)
 {
+    /* Each outer iteration is ~1µs at 192 MHz (48 NOPs × ~4 cycles each).
+     * Earlier versions used esp_delay(24) which is only ~0.5µs at 192 MHz,
+     * making every timeout half as long as intended — the root cause of the
+     * startup race condition where the NTP response arrived after the
+     * (incorrectly short) 5-second wait had already expired. */
     uint32_t timeout = timeout_ms * 1000;
     while (timeout--) {
         if (UART2->CSR & UART_CSR_RXAVL) {
-            /* Small delay to ensure byte is fully received */
+            /* Small delay to ensure byte is fully latched into RDR */
             esp_delay(100);
             return (uint8_t)UART2->RDR;
         }
-        esp_delay(24);  /* ~1us */
+        esp_delay(48);  /* ~1µs at 192 MHz */
     }
     return -1;
 }
@@ -64,10 +69,10 @@ static int UART2_ReceiveByteFast(uint32_t timeout_ms)
     uint32_t timeout = timeout_ms * 1000;
     while (timeout--) {
         if (UART2->CSR & UART_CSR_RXAVL) {
-            esp_delay(100);  /* Keep the settling delay */
+            esp_delay(100);  /* settling delay */
             return (uint8_t)UART2->RDR;
         }
-        esp_delay(24);
+        esp_delay(48);  /* ~1µs at 192 MHz */
     }
     return -1;
 }
