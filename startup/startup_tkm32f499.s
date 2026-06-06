@@ -29,6 +29,20 @@ Reset_Handler:
     /* Set stack pointer */
     ldr sp, =_estack
 
+    /* Zero BSS so static variables start with their declared initial value.
+     * Without this, static uint8_t dst_enabled = 0 retains whatever residual
+     * value the SDRAM had, which often makes TIMEZONE_OFFSET + dst_enabled
+     * evaluate to 0 instead of -5, causing the clock to display UTC. */
+    ldr  r0, =_sbss
+    ldr  r1, =_ebss
+    mov  r2, #0
+bss_zero:
+    cmp  r0, r1
+    bge  bss_done
+    str  r2, [r0], #4
+    b    bss_zero
+bss_done:
+
     /* Jump directly to main - no C library init needed for bare metal */
     bl main
 
